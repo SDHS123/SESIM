@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>세심제 2026 | 강원사대부고 축제</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- 모바일 뷰포트 컨테이너 -->
+  <div class="app-container">
+
+    <!-- 상단 헤더 -->
+    <header class="app-header">
+      <div class="brand">
+        <img src="사대부고 로고.png" alt="강원사대부고 로고" class="school-logo">
+        <div class="brand-text">
+          <span class="school-name">강원대학교사범대학부설고등학교</span>
+          <span class="festival-name">2026 세심제 (SESIM)</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="user-profile-btn" class="profile-chip" title="내 계정 정보">
+          <span class="status-dot"></span>
+          <span id="user-display-name">2-7 박기령</span>
+        </button>
+        <button id="menu-btn" class="icon-btn" aria-label="메뉴 열기">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 메인 스크롤 콘텐츠 -->
+    <main class="main-content">
+
+      <!-- 1. 히어로: D-Day 카운트다운 OR 당일 팝업 캐러셀 슬라이더 -->
+      <section class="hero-section">
+        <!-- 모드 전환 테스트 스위처 (기획부 부장용 빠른 시뮬레이터) -->
+        <div class="view-mode-controller">
+          <span class="mode-label">⚡ 화면 시뮬레이터:</span>
+          <div class="mode-buttons">
+            <button id="mode-btn-dday" class="mode-toggle-btn active" title="D-Day 이전 카운트다운 화면">⏳ D-Day 사전 모드</button>
+            <button id="mode-btn-festival" class="mode-toggle-btn" title="축제 당일 팝업 슬라이더 화면">🎉 축제 당일 모드</button>
+          </div>
+        </div>
+
+        <!-- [VIEW A] D-Day 사전 모드: 카운트다운 & 공식 포스터 티저 -->
+        <div id="hero-dday-view" class="hero-view-container">
+          <!-- D-Day 카운트다운 배너 -->
+          <div class="countdown-card">
+            <div class="countdown-top">
+              <span class="countdown-badge">✨ D-DAY COUNTDOWN</span>
+              <span class="countdown-today">오늘 2026.10.10 기준</span>
+            </div>
+            <div class="countdown-title">2027 세심제 개막까지</div>
+            <div class="countdown-timer" id="countdown-timer">
+              <div class="time-block"><span id="cd-days">88</span><label>일</label></div>
+              <span class="colon">:</span>
+              <div class="time-block"><span id="cd-hours">17</span><label>시간</label></div>
+              <span class="colon">:</span>
+              <div class="time-block"><span id="cd-minutes">39</span><label>분</label></div>
+              <span class="colon">:</span>
+              <div class="time-block"><span id="cd-seconds">20</span><label>초</label></div>
+            </div>
+            <p class="countdown-target-info">개막 일시: 2027년 1월 6일(수) 오전 08:20</p>
+          </div>
+
+          <!-- 축제 메인 포스터 배너 (개나리 옐로우 무드) -->
+          <div class="poster-card">
+            <div class="poster-visual">
+              <img src="image.png" alt="2026-2027 세심제 공식 포스터" class="poster-hero-img">
+              <div class="poster-halftone-overlay"></div>
+            </div>
+            <div class="poster-overlay">
+              <div class="poster-badge-row">
+                <span class="poster-tag">GANGWON NAT'L UNIV HIGH SCHOOL</span>
+                <span class="poster-sparkle">✦ ✦ ✦</span>
+              </div>
+              <span class="festival-year">2026 - 2027</span>
+              <h1 class="poster-title">세 심 제</h1>
+              <p class="poster-subtitle">개나리꽃 향기와 청춘의 울림</p>
+              <div class="poster-dates">
+                <span>📍 1.6(수) 교내 동아리제 & 웅비관</span>
+                <span>📍 1.7(목) 강원대 백령아트홀 대공연</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [VIEW B] 축제 당일 모드: 옆으로 넘기는 팝업 포스터 & 공지 슬라이더 (Carousel) -->
+        <div id="hero-festival-view" class="hero-view-container hidden">
+          <div class="carousel-container">
+            <div class="carousel-header">
+              <div class="carousel-live-badge"><span class="blink-dot"></span> LIVE 당일 팝업 알림</div>
+              <span class="carousel-swipe-hint">👈 옆으로 넘겨보세요 👉</span>
+            </div>
+
+            <!-- 가로 스크롤 카드 리스트 -->
+            <div class="popup-carousel-track" id="popup-carousel-track">
+              <!-- 슬라이드 1: 메인 세심제 개막 -->
+              <div class="popup-card main-poster-slide">
+                <div class="popup-card-badge">FESTIVAL OPEN 🎊</div>
+                <div class="popup-main-content">
+                  <span class="popup-sub">강원사대부고 축제</span>
+                  <h3 class="popup-title">2027 세심제에 오신 것을 환영합니다!</h3>
+                  <p class="popup-desc">오늘은 1일차 교내 동아리제입니다. 지금 부스를 예약하고 다양한 체험에 참여해보세요!</p>
+                  <div class="popup-action-row">
+                    <button class="popup-btn primary" onclick="SESIM.scrollToSection('booths-section')">부스 예약하러 가기 🎪</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 슬라이드 2: 부스 홍보 (컴퓨터&수학 방탈출) -->
+              <div class="popup-card booth-promo-slide">
+                <div class="popup-card-badge bg-yellow">🔥 인기 부스 추천</div>
+                <div class="popup-main-content">
+                  <span class="popup-sub">컴퓨터 & 수학 동아리</span>
+                  <h3 class="popup-title">방탈출: 미지의 1-1반</h3>
+                  <p class="popup-desc">제한시간 15분! 단서를 찾아 암호를 풀고 탈출하라. 현재 대기자 폭주 중!</p>
+                  <div class="popup-action-row">
+                    <button class="popup-btn" onclick="SESIM.openReserveModal(1)">지금 바로 예약 🗝️</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 슬라이드 3: 복면가왕 투표 안내 -->
+              <div class="popup-card vote-promo-slide">
+                <div class="popup-card-badge bg-rose">🎤 실시간 참여</div>
+                <div class="popup-main-content">
+                  <span class="popup-sub">1일차 15:35 웅비관 / 2일차 백령</span>
+                  <h3 class="popup-title">복면가왕 예선 & 결승 실시간 투표!</h3>
+                  <p class="popup-desc">무대 뒤 가려진 복면 가수는 누구?! 당신의 한 표로 우승자가 결정됩니다.</p>
+                  <div class="popup-action-row">
+                    <button class="popup-btn pink" id="carousel-vote-btn">투표소 입장하기 🗳️</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 슬라이드 4: 세심 어워즈 (릴스 공모전) -->
+              <div class="popup-card awards-slide">
+                <div class="popup-card-badge bg-purple">🎬 세심 어워즈</div>
+                <div class="popup-main-content">
+                  <span class="popup-sub">2일차 10:25 웅비관 시상식</span>
+                  <h3 class="popup-title">1일차 부스체험 릴스 & 숏폼 공모전</h3>
+                  <p class="popup-desc">축제의 명장면을 릴스로 담아주세요! 인기 영상은 웅비관 대형 스크린 상영!</p>
+                  <div class="popup-action-row">
+                    <span class="popup-chip">#세심제릴스 #사대부고</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 슬라이드 5: 백령아트홀 도보 이동 안내 -->
+              <div class="popup-card notice-slide">
+                <div class="popup-card-badge bg-blue">📢 2일차 이동 수칙</div>
+                <div class="popup-main-content">
+                  <span class="popup-sub">1.7(목) 12:50~13:30 인원 파악 후 이동</span>
+                  <h3 class="popup-title">강원대 백령아트홀 안전 보도 이동</h3>
+                  <p class="popup-desc">담임선생님 인솔 하에 학급별로 질서 있게 보도로 이동합니다. 지정 좌석 확인 필수!</p>
+                  <div class="popup-action-row">
+                    <button class="popup-btn outline" onclick="SESIM.scrollToSection('schedule-section')">2일차 일정 확인 📅</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 캐러셀 인디케이터 (도트) -->
+            <div class="carousel-dots" id="carousel-dots">
+              <span class="dot active"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 가로 스크롤 퀵 메뉴 (손글씨 와이어프레임 동그라미 아이콘 반영) -->
+      <nav class="quick-nav">
+        <button class="nav-item active" data-target="booths-section">
+          <div class="nav-icon bg-yellow-btn">🎪</div>
+          <span>부스예약</span>
+        </button>
+        <button class="nav-item" data-target="schedule-section">
+          <div class="nav-item-badge">타임테이블</div>
+          <div class="nav-icon bg-navy-btn">📅</div>
+          <span>일정표</span>
+        </button>
+        <button class="nav-item" data-target="map-section">
+          <div class="nav-icon bg-yellow-btn">🗺️</div>
+          <span>부스지도</span>
+        </button>
+        <button class="nav-item" data-target="meal-section">
+          <div class="nav-icon bg-navy-btn">🍱</div>
+          <span>오늘급식</span>
+        </button>
+        <button class="nav-item" data-target="esports-section">
+          <div class="nav-icon bg-yellow-btn">🎮</div>
+          <span>E-스포츠</span>
+        </button>
+        <button class="nav-item" id="open-minigame-btn">
+          <div class="nav-item-badge">대기중!</div>
+          <div class="nav-icon bg-navy-btn">🦖</div>
+          <span>미니게임</span>
+        </button>
+        <button class="nav-item" id="open-vote-btn">
+          <div class="nav-icon bg-yellow-btn">🎤</div>
+          <span>복면가왕</span>
+        </button>
+        <button class="nav-item" id="open-admin-btn">
+          <div class="nav-icon bg-navy-btn">⚙️</div>
+          <span>부스관리</span>
+        </button>
+      </nav>
+
+      <!-- 내 실시간 예약 현황 배너 (최대 2개 예약) -->
+      <section class="my-reservation-banner" id="my-reservations-banner">
+        <div class="res-header">
+          <div class="res-title-group">
+            <span class="res-tag">내 예약 티켓</span>
+            <span class="res-count-badge" id="res-count-badge">0 / 2개 예약 중</span>
+          </div>
+          <button class="text-btn" id="refresh-res-btn">새로고침 ↻</button>
+        </div>
+        <div class="res-cards-container" id="my-res-cards">
+          <div class="empty-res">
+            아직 예약한 부스가 없습니다. 아래 부스 목록에서 마음에 드는 부스를 예약해보세요! (최대 2개 동시 예약 가능)
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 부스 목록 & 예약 섹션 -->
+      <section class="section" id="booths-section">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">동아리 부스 예약</h2>
+            <p class="section-desc">1월 6일(수) 교내 동아리 체험 부스</p>
+          </div>
+          <div class="filter-chips">
+            <button class="chip active" data-filter="all">전체</button>
+            <button class="chip" data-filter="open">예약가능</button>
+            <button class="chip" data-filter="floor1">1층</button>
+            <button class="chip" data-filter="floor2">2층</button>
+          </div>
+        </div>
+
+        <div class="booth-list" id="booth-list">
+          <!-- 부스 카드가 JS로 렌더링됩니다 -->
+        </div>
+      </section>
+
+      <!-- 4. 일정표 섹션 (PDF 세심제 타임테이블 초안 완벽 반영) -->
+      <section class="section" id="schedule-section">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">세심제 타임테이블 📅</h2>
+            <p class="section-desc">기획부 초안 기준 (세부 시간은 진행 상황에 따라 변동될 수 있습니다)</p>
+          </div>
+          <div class="day-tabs">
+            <button class="day-tab" data-day="rehearsal">리허설 (1.4~1.5)</button>
+            <button class="day-tab active" data-day="day1">1일차 (1.6 수)</button>
+            <button class="day-tab" data-day="day2">2일차 (1.7 목)</button>
+          </div>
+        </div>
+
+        <div class="schedule-card" id="schedule-card">
+          <!-- 리허설 일정 (1.4 월 ~ 1.5 화) -->
+          <div class="schedule-timeline hidden" id="timeline-rehearsal">
+            <div class="timeline-header">
+              <span class="place-badge bg-navy">웅비관</span>
+              <h3>방과후 리허설</h3>
+              <p class="timeline-sub-note">※ 체육·기숙사부 협조 / 진행 인원 및 출연진 필수 참석</p>
+            </div>
+            <ul class="timeline-list">
+              <li>
+                <span class="time">1.4 (월)<br>17:00 ~ 22:00</span>
+                <div class="event">
+                  <strong>1차 방과후 리허설</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>밴드부, 학교공연, 복면가왕 무대 점검 (동선 및 음향 체크)</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">1.5 (화)<br>17:00 ~ 22:00</span>
+                <div class="event">
+                  <strong>2차 방과후 리허설</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>밴드부, 학교공연, 복면가왕 최종 리허설 및 무대 세팅</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- 1일차 일정 (1.6 수 교내 동아리제 & 웅비관) -->
+          <div class="schedule-timeline" id="timeline-day1">
+            <div class="timeline-header">
+              <span class="place-badge bg-yellow-text">교내 & 웅비관</span>
+              <h3>1일차: 동아리제 & 웅비관 무대</h3>
+              <p class="timeline-sub-note">오전 교내 부스 체험 ➡️ 맛있는 점심 ➡️ 오후 웅비관 특별 프로그램</p>
+            </div>
+            <ul class="timeline-list">
+              <li>
+                <span class="time">08:20 ~ 08:40<br><small>(20분)</small></span>
+                <div class="event">
+                  <strong>조회 및 출석 확인 / 동아리제 준비</strong>
+                  <span class="event-place">📍 각 반 교실</span>
+                  <p>담임교사 조회 및 부스 운영 동아리 준비</p>
+                </div>
+              </li>
+              <li>
+                <span class="time highlight">08:40 ~ 10:10<br><small>(90분)</small></span>
+                <div class="event">
+                  <strong>동아리제 1부 (부스 체험 & 전시)</strong>
+                  <span class="event-place">📍 학습관 및 운동장</span>
+                  <p>각 동아리 부스 체험 및 이벤트 참여 (웹사이트 사전 예약 필수)</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">10:10 ~ 10:30<br><small>(20분)</small></span>
+                <div class="event">
+                  <strong>휴식 및 부스 중간 정돈</strong>
+                  <p>동아리 교사 및 담임교사 / 환경부 / 학생자치회 협조</p>
+                </div>
+              </li>
+              <li>
+                <span class="time highlight">10:30 ~ 12:00<br><small>(90분)</small></span>
+                <div class="event">
+                  <strong>동아리제 2부 (부스 체험 & 전시)</strong>
+                  <span class="event-place">📍 학습관 및 운동장</span>
+                  <p>오후 관람을 위한 부스 스탬프 모으기</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">12:00 ~ 12:30<br><small>(30분)</small></span>
+                <div class="event">
+                  <strong>부스 정리 및 정돈</strong>
+                  <p>클린 부스 환경 정화 활동</p>
+                </div>
+              </li>
+              <li class="lunch-item">
+                <span class="time">12:30 ~ 13:30<br><small>(중식)</small></span>
+                <div class="event">
+                  <strong>중식 (시차 배식) 🍱</strong>
+                  <span class="event-place">📍 식생활관</span>
+                  <div class="meal-shift-grid">
+                    <span>3학년: 12:30 ~ 13:30</span>
+                    <span>2학년: 12:40 ~ 13:30</span>
+                    <span>1학년: 12:50 ~ 13:30</span>
+                  </div>
+                </div>
+              </li>
+              <li>
+                <span class="time">13:40 ~ 13:50<br><small>(10분)</small></span>
+                <div class="event">
+                  <strong>교장 선생님 축사 🎤</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>세심제 개막 축하 말씀</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">13:50 ~ 14:40<br><small>(50분)</small></span>
+                <div class="event">
+                  <strong>방송제 🎬</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>방송부 제작 영상 및 학교 다큐 상영</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">14:40 ~ 15:20<br><small>(40분)</small></span>
+                <div class="event">
+                  <strong>말자쇼 🎭</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>학생 참여형 유쾌한 토크 & 버라이어티 쇼</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">15:20 ~ 15:35<br><small>(15분)</small></span>
+                <div class="event">
+                  <strong>휴식 시간</strong>
+                </div>
+              </li>
+              <li class="special-item">
+                <span class="time highlight">15:35 ~ 16:30<br><small>(55분)</small></span>
+                <div class="event">
+                  <strong>복면가왕 예선전 🎭</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>실력파 복면 가수들의 치열한 1일차 토너먼트 예선전!</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- 2일차 일정 (1.7 목 웅비관 ➡️ 강원대 백령아트홀) -->
+          <div class="schedule-timeline hidden" id="timeline-day2">
+            <div class="timeline-header">
+              <span class="place-badge bg-rose">강원대 백령아트홀</span>
+              <h3>2일차: 세심 어워즈 & 백령아트홀 대공연</h3>
+              <p class="timeline-sub-note">오전 웅비관 어워즈 ➡️ 중식 ➡️ 백령아트홀 도보 이동 ➡️ 메인 콘서트</p>
+            </div>
+            <ul class="timeline-list">
+              <li>
+                <span class="time">10:00 ~ 10:10<br><small>(10분)</small></span>
+                <div class="event">
+                  <strong>조회 및 출석 확인</strong>
+                  <span class="event-place">📍 각 반 교실</span>
+                </div>
+              </li>
+              <li>
+                <span class="time">10:25 ~ 10:55<br><small>(30분)</small></span>
+                <div class="event">
+                  <strong>세심 어워즈 (릴스 공모전 시상식) 🏆</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>1일차 부스 체험 하이라이트 영상 상영 및 시상식</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">11:00 ~ 11:40<br><small>(40분)</small></span>
+                <div class="event">
+                  <strong>게임은 핑계고 (학생 즉석 섭외 게임쇼) 🎮</strong>
+                  <span class="event-place">📍 웅비관</span>
+                  <p>선생님 & 학생 즉석 섭외 꿀잼 게임쇼 (시간 여유 시 나락퀴즈쇼 진행!)</p>
+                </div>
+              </li>
+              <li class="lunch-item">
+                <span class="time">11:40 ~ 12:40<br><small>(중식)</small></span>
+                <div class="event">
+                  <strong>중식 (시차 배식) 🍱</strong>
+                  <span class="event-place">📍 식생활관</span>
+                  <div class="meal-shift-grid">
+                    <span>3학년: 11:40 ~ 12:40</span>
+                    <span>2학년: 11:45 ~ 12:40</span>
+                    <span>1학년: 11:55 ~ 12:40</span>
+                  </div>
+                </div>
+              </li>
+              <li class="move-item">
+                <span class="time highlight">12:50 ~ 13:30<br><small>(40분)</small></span>
+                <div class="event">
+                  <strong>인원 파악 후 강원대 백령아트홀 보도 이동 🚶</strong>
+                  <span class="event-place">📍 학교 ➡️ 백령아트홀</span>
+                  <p>담임교사 인솔 하에 질서 있는 도보 이동 (지정 좌석 착석)</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">13:30 ~ 15:00<br><small>(90분)</small></span>
+                <div class="event">
+                  <strong>관현악 오케스트라 공연 🎻</strong>
+                  <span class="event-place">📍 백령아트홀 대공연장</span>
+                  <p>웅장하고 감미로운 관현악 연주 무대</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">15:00 ~ 15:20<br><small>(20분)</small></span>
+                <div class="event">
+                  <strong>휴식 및 무대 정돈</strong>
+                </div>
+              </li>
+              <li>
+                <span class="time highlight">15:20 ~ 16:00<br><small>(40분)</small></span>
+                <div class="event">
+                  <strong>학생 장기자랑 🌟</strong>
+                  <span class="event-place">📍 백령아트홀 대공연장</span>
+                  <p>숨겨진 끼를 대방출하는 사대부고 최고의 스타는?!</p>
+                </div>
+              </li>
+              <li class="special-item">
+                <span class="time highlight">16:00 ~ 17:00<br><small>(60분)</small></span>
+                <div class="event">
+                  <strong>복면가왕 결승전 & 패자부활전 👑</strong>
+                  <span class="event-place">📍 백령아트홀 대공연장</span>
+                  <p>백령 대무대에서 펼쳐지는 가왕전! <strong>웹사이트 실시간 투표 진행!</strong></p>
+                </div>
+              </li>
+              <li>
+                <span class="time">17:00 ~ 17:20<br><small>(20분)</small></span>
+                <div class="event">
+                  <strong>댄스부 화려한 축하 공연 💃</strong>
+                  <span class="event-place">📍 백령아트홀 대공연장</span>
+                  <p>시선 강탈! 열정적인 퍼포먼스 무대</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">17:20 ~ 17:30<br><small>(10분)</small></span>
+                <div class="event">
+                  <strong>휴식 및 맛있는 꿀맛 간식 배부 🥪</strong>
+                  <p>기획부 배려 간식 타임 (충전 완료 후 마지막 열기로!)</p>
+                </div>
+              </li>
+              <li class="special-item">
+                <span class="time highlight">17:30 ~ 18:10<br><small>(40분)</small></span>
+                <div class="event">
+                  <strong>밴드부 열광의 라이브 피날레 🎸</strong>
+                  <span class="event-place">📍 백령아트홀 대공연장</span>
+                  <p>심장을 울리는 사운드와 함성! 세심제 열기의 절정</p>
+                </div>
+              </li>
+              <li>
+                <span class="time">18:10 ~ 18:30<br><small>(20분)</small></span>
+                <div class="event">
+                  <strong>최종 우승자 발표, 시상 및 클로징 🎉</strong>
+                  <span class="event-place">📍 백령아트홀 대공연장</span>
+                  <p>가왕 및 부스/장기자랑 시상, 2027 세심제 폐막</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. 오늘의 급식 섹션 (손글씨 반영) -->
+      <section class="section" id="meal-section">
+        <div class="section-header">
+          <h2 class="section-title">오늘의 메뉴 🍱</h2>
+          <span class="badge-sub">축제 특식</span>
+        </div>
+        <div class="meal-card">
+          <div class="meal-col">
+            <span class="meal-tag">중식 (1월 6일)</span>
+            <ul class="meal-menu-list">
+              <li>🍗 특제 데리야끼 치킨마요덮밥</li>
+              <li>🍜 가쓰오 유부 장국</li>
+              <li>🥟 바삭 군만두 & 비빔야채</li>
+              <li>🥗 매콤 겉절이 김치</li>
+              <li>🧃 청포도 에이드 & 찹쌀떡</li>
+            </ul>
+          </div>
+          <div class="meal-col side">
+            <div class="meal-sub-box">
+              <span class="meal-sub-tag">열량 안내</span>
+              <p>940.5 Kcal</p>
+            </div>
+            <div class="meal-sub-box">
+              <span class="meal-sub-tag">원산지</span>
+              <p>닭고기(국내산), 쌀(국내산)</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. E-스포츠 실시간 현황 (손글씨 와이어프레임 1위 OOO 반영) -->
+      <section class="section" id="esports-section">
+        <div class="section-header">
+          <h2 class="section-title">E-스포츠 실시간 현황 🏆</h2>
+          <span class="live-pill">LIVE</span>
+        </div>
+        <div class="esports-card">
+          <div class="esports-champion">
+            <div class="crown">👑 1위 독주 중!</div>
+            <div class="champ-info">
+              <span class="champ-grade">2학년 4반</span>
+              <h3 class="champ-team">"천상계 펜타킬"</h3>
+              <p class="champ-shout">"와우~~ 결승 진출 확정! 다 덤벼라!"</p>
+            </div>
+          </div>
+          <div class="esports-ranks">
+            <div class="rank-row">
+              <span class="rank-num silver">2위</span>
+              <span class="rank-team">1학년 2반 [패기돌격]</span>
+              <span class="rank-status">준결승 대기</span>
+            </div>
+            <div class="rank-row">
+              <span class="rank-num bronze">3위</span>
+              <span class="rank-team">2학년 7반 [기령과 아이들]</span>
+              <span class="rank-status">3·4위전 진출</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. 미니게임 순위 대시보드 (손글씨 2-7 박기령 포디움 반영) -->
+      <section class="section" id="ranking-section">
+        <div class="section-header">
+          <h2 class="section-title">미니게임 명예의 전당 🦖</h2>
+          <button class="btn-play-mini" id="quick-play-btn">게임 시작 ▶</button>
+        </div>
+        <div class="podium-card">
+          <div class="podium">
+            <!-- 2위 -->
+            <div class="podium-col rank-2">
+              <div class="podium-user">
+                <span class="avatar">🥈</span>
+                <span class="name">1-3 이민준</span>
+                <span class="score">8,450점</span>
+              </div>
+              <div class="podium-bar bar-2">2위</div>
+            </div>
+            <!-- 1위 (손글씨의 2-7 박기령!) -->
+            <div class="podium-col rank-1">
+              <div class="crown-badge">👑 1위</div>
+              <div class="podium-user">
+                <span class="avatar">🥇</span>
+                <span class="name font-bold">2-7 박기령</span>
+                <span class="score score-gold">10,927점</span>
+              </div>
+              <div class="podium-bar bar-1">1위</div>
+            </div>
+            <!-- 3위 -->
+            <div class="podium-col rank-3">
+              <div class="podium-user">
+                <span class="avatar">🥉</span>
+                <span class="name">2-1 김서연</span>
+                <span class="score">7,120점</span>
+              </div>
+              <div class="podium-bar bar-3">3위</div>
+            </div>
+          </div>
+          <p class="podium-tip">💡 부스 대기 시간에 플레이하고 1등 문화상품권에 도전하세요!</p>
+        </div>
+      </section>
+
+      <!-- 8. 사대부고 축제 지도 (손글씨 와이어프레임 층별/학습관 지도 반영) -->
+      <section class="section" id="map-section">
+        <div class="section-header">
+          <h2 class="section-title">사대부고 부스 안내 지도 🗺️</h2>
+          <div class="map-level-selector">
+            <button class="map-btn active" data-map="1f">본관 1층</button>
+            <button class="map-btn" data-map="2f">본관 2층</button>
+            <button class="map-btn" data-map="study">학습관/강당</button>
+          </div>
+        </div>
+
+        <div class="school-map-card">
+          <div class="map-diagram" id="map-diagram">
+            <!-- 층별 맵 UI -->
+            <div class="map-zone study-hall">
+              <span class="zone-label">중앙 학습관</span>
+              <span class="zone-booth">[B01] 드론 동아리</span>
+            </div>
+            <div class="map-corridor">중앙 복도 & 쉼터</div>
+            <div class="map-rooms-grid">
+              <div class="room-box highlight" onclick="SESIM.openReserveModal(1)">
+                <span class="room-no">1-1반</span>
+                <span class="room-name">방탈출 카페</span>
+              </div>
+              <div class="room-box" onclick="SESIM.openReserveModal(2)">
+                <span class="room-no">1-2반</span>
+                <span class="room-name">타로 & 사주</span>
+              </div>
+              <div class="room-box" onclick="SESIM.openReserveModal(3)">
+                <span class="room-no">과학실</span>
+                <span class="room-name">분자요리 실험실</span>
+              </div>
+              <div class="room-box special" onclick="SESIM.showEventHint()">
+                <span class="room-no">학생회실</span>
+                <span class="room-name">🎁 보물찾기 힌트</span>
+              </div>
+            </div>
+          </div>
+          <div class="map-footer">
+            <span>📌 방을 터치하면 해당 부스 예약으로 바로 연결됩니다!</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 하단 탭 내비게이션 바 -->
+    <nav class="bottom-tab-bar">
+      <button class="tab-btn active" onclick="SESIM.scrollToTop()">
+        <span class="tab-icon">🏠</span>
+        <span class="tab-label">홈</span>
+      </button>
+      <button class="tab-btn" onclick="SESIM.scrollTo('booths-section')">
+        <span class="tab-icon">🎪</span>
+        <span class="tab-label">부스예약</span>
+      </button>
+      <button class="tab-btn" onclick="SESIM.openMinigameModal()">
+        <span class="tab-icon">🦖</span>
+        <span class="tab-label">미니게임</span>
+      </button>
+      <button class="tab-btn" onclick="SESIM.openAdminModal()">
+        <span class="tab-icon">⚙️</span>
+        <span class="tab-label">부스관리자</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- ==================== 모달 레이어들 ==================== -->
+
+  <!-- 1. 부스 예약 신청 모달 (동시 2개 제한 적용) -->
+  <div class="modal-overlay hidden" id="reserve-modal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 id="modal-booth-title">부스 예약하기</h3>
+        <button class="close-btn" onclick="SESIM.closeModal('reserve-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-booth-info">
+          <p id="modal-booth-desc">동아리 설명</p>
+          <div class="modal-meta-tags">
+            <span class="meta-tag" id="modal-booth-loc">위치: 1-1반</span>
+            <span class="meta-tag" id="modal-booth-wait">현재 대기: 3팀</span>
+          </div>
+        </div>
+
+        <form id="reserve-form" onsubmit="SESIM.handleReserveSubmit(event)">
+          <div class="form-group">
+            <label>예약자 학번/이름 (학교 계정 연동)</label>
+            <input type="text" id="reserve-student-info" value="2학년 7반 9번 박기령" readonly class="input-readonly">
+          </div>
+
+          <div class="form-group">
+            <label for="reserve-phone">비상 연락처 (호출 알림용 필수) <span class="required">*</span></label>
+            <input type="tel" id="reserve-phone" placeholder="010-1234-5678" required pattern="[0-9]{2,3}-[0-9]{3,4}-[0-9]{4}|[0-9]{10,11}">
+            <p class="form-hint">부스 입장 차례가 되었을 때 안내 문자가 발송됩니다.</p>
+          </div>
+
+          <div class="form-group">
+            <label for="reserve-party">예약 인원</label>
+            <select id="reserve-party">
+              <option value="1">1명 (개인)</option>
+              <option value="2" selected>2명</option>
+              <option value="3">3명</option>
+              <option value="4">4명 (최대)</option>
+            </select>
+          </div>
+
+          <div class="form-agreement">
+            <label class="checkbox-label">
+              <input type="checkbox" id="reserve-agree" required>
+              <span>[필수] 축제 부스 운영 및 입장 연락을 위한 개인정보(전화번호) 수집에 동의합니다.</span>
+            </label>
+          </div>
+
+          <div class="modal-notice">
+            ⚠️ <strong>노쇼 방지 안내</strong>: 세심제 부스는 <strong>1인당 동시에 최대 2개</strong>까지만 예약할 수 있습니다. 차례가 되어 입장 완료 후 추가 예약이 가능합니다.
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn-cancel" onclick="SESIM.closeModal('reserve-modal')">취소</button>
+            <button type="submit" class="btn-submit" id="btn-submit-reserve">예약 신청하기</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 부스 관리자 페이지 모달 (개별 권한 PIN 인증 시스템) -->
+  <div class="modal-overlay hidden" id="admin-modal">
+    <div class="modal-sheet modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3>부스 운영자 전용 관리자</h3>
+          <p class="sub-header-text">부스 대표 1인 개별 권한 인증</p>
+        </div>
+        <button class="close-btn" onclick="SESIM.closeModal('admin-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- 관리자 로그인 폼 (PIN 인증) -->
+        <div id="admin-login-view">
+          <div class="admin-login-box">
+            <h4>부스 관리자 인증</h4>
+            <p>총괄 어드민(학생회)에게 부여받은 담당 부스와 4자리 비밀번호(PIN)를 입력하세요.</p>
+            <div class="form-group">
+              <label>관리할 부스 선택</label>
+              <select id="admin-booth-select">
+                <option value="1">1. [방탈출] 미지의 1-1반 (PIN: 1001)</option>
+                <option value="2">2. [타로/사주] 미래를 보는 찻집 (PIN: 1002)</option>
+                <option value="3">3. [분자요리] 세심 퀴진 실험실 (PIN: 1003)</option>
+                <option value="4">4. [레트로 오락실] 픽셀 월드 (PIN: 1004)</option>
+                <option value="5">5. [귀신의 집] 닫힌 교실 (PIN: 1005)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>부스 고유 PIN (비밀번호)</label>
+              <input type="password" id="admin-pin-input" placeholder="4자리 PIN 입력 (테스트: 1001)" maxlength="6">
+            </div>
+            <button class="btn-submit full-width" onclick="SESIM.authenticateAdmin()">관리자 인증 및 로그인</button>
+          </div>
+        </div>
+
+        <!-- 관리자 대시보드 (인증 성공 후 노출) -->
+        <div id="admin-dashboard-view" class="hidden">
+          <div class="admin-dash-header">
+            <div>
+              <span class="badge-role">인증 완료: 대표 운영자</span>
+              <h4 id="admin-active-booth-name">방탈출: 미지의 1-1반</h4>
+            </div>
+            <button class="btn-logout" onclick="SESIM.logoutAdmin()">로그아웃</button>
+          </div>
+
+          <!-- 부스 상태 토글 컨트롤 -->
+          <div class="admin-status-control">
+            <span>부스 운영 상태:</span>
+            <div class="status-buttons">
+              <button class="status-btn active" data-status="OPEN" onclick="SESIM.updateBoothStatus('OPEN')">🟢 정상 운영</button>
+              <button class="status-btn" data-status="BREAK" onclick="SESIM.updateBoothStatus('BREAK')">🟡 브레이크 타임</button>
+              <button class="status-btn" data-status="CLOSED" onclick="SESIM.updateBoothStatus('CLOSED')">🔴 금일 마감</button>
+            </div>
+          </div>
+
+          <!-- 대기자 명단 리스트 -->
+          <div class="admin-waitlist-section">
+            <div class="waitlist-header">
+              <h5>실시간 예약 대기 명단 (<span id="admin-wait-count">0</span>명)</h5>
+              <span class="hint-text">입장 버튼을 누르면 학생에게 호출 알림이 갑니다</span>
+            </div>
+            <div class="admin-list" id="admin-waitlist-items">
+              <!-- 명단이 렌더링됩니다 -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 대기용 미니 점프 게임 모달 (크롬 공룡 스타일 Canvas) -->
+  <div class="modal-overlay hidden" id="minigame-modal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div>
+          <h3>🦖 세심 공룡 런 (점프 미니게임)</h3>
+          <p class="sub-header-text">예약 대기 시간 지루함 해소! 스페이스바 or 화면 터치로 점프!</p>
+        </div>
+        <button class="close-btn" onclick="SESIM.closeModal('minigame-modal')">✕</button>
+      </div>
+      <div class="modal-body text-center">
+        <div class="game-score-board">
+          <div class="score-item">현재 점수: <span id="game-current-score" class="score-val">0</span></div>
+          <div class="score-item">내 최고 기록: <span id="game-best-score" class="score-val gold">10,927</span></div>
+        </div>
+
+        <div class="canvas-wrapper">
+          <canvas id="game-canvas" width="340" height="180"></canvas>
+          <div id="game-start-prompt" class="game-overlay-prompt">
+            <p>👆 화면을 터치하여 게임 시작!</p>
+          </div>
+        </div>
+
+        <div class="game-controls">
+          <button class="btn-jump" id="game-jump-btn">🚀 터치로 점프!</button>
+          <button class="btn-restart" id="game-restart-btn" onclick="SESIM.initGame()">다시하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 복면가왕 실시간 투표 모달 -->
+  <div class="modal-overlay hidden" id="vote-modal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <div>
+          <h3>🎤 제2회 세심 복면가왕 실시간 투표</h3>
+          <p class="sub-header-text">2일차 백령아트홀 본선 무대 (계정당 1표)</p>
+        </div>
+        <button class="close-btn" onclick="SESIM.closeModal('vote-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="vote-desc">가장 감동적인 무대를 보여준 복면 가수에게 소중한 1표를 행사해주세요!</p>
+        <div class="candidate-list">
+          <div class="candidate-card" onclick="SESIM.castVote('가수1')">
+            <span class="cand-mask">🎭 1번</span>
+            <div class="cand-info">
+              <strong>"노래하는 사대부고 호랑이"</strong>
+              <span>선곡: 기억의 습작 (전람회)</span>
+            </div>
+            <button class="btn-vote">투표</button>
+          </div>
+          <div class="candidate-card" onclick="SESIM.castVote('가수2')">
+            <span class="cand-mask">🦊 2번</span>
+            <div class="cand-info">
+              <strong>"백령아트홀 꾀꼬리"</strong>
+              <span>선곡: 사건의 지평선 (윤하)</span>
+            </div>
+            <button class="btn-vote">투표</button>
+          </div>
+          <div class="candidate-card" onclick="SESIM.castVote('가수3')">
+            <span class="cand-mask">🤖 3번</span>
+            <div class="cand-info">
+              <strong>"감성 로봇 알파고"</strong>
+              <span>선곡: 사랑에 연습이 있었다면</span>
+            </div>
+            <button class="btn-vote">투표</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 토스트 알림창 -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
