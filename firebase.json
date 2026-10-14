@@ -1,0 +1,24 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/.git/**",
+      "**/node_modules/**",
+      "*.bat",
+      "*.cmd",
+      "*.exe",
+      "*.py",
+      "*.pdf",
+      "request.md",
+      "asd"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

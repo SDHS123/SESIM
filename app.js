@@ -761,13 +761,13 @@ const SESIM = {
         if (btnFest) btnFest.classList.remove('active');
         if (heroDday) heroDday.classList.remove('hidden');
         if (heroFest) heroFest.classList.add('hidden');
-        this.showToast('⏳ [D-Day 사전 모드] 카운트다운 & 포스터 티저 화면');
+        this.showToast('[D-Day 사전 모드] 카운트다운 및 포스터 화면입니다.');
       } else {
         if (btnFest) btnFest.classList.add('active');
         if (btnDday) btnDday.classList.remove('active');
         if (heroFest) heroFest.classList.remove('hidden');
         if (heroDday) heroDday.classList.add('hidden');
-        this.showToast('🎉 [축제 당일 모드] 가로 스크롤 팝업 슬라이더 화면');
+        this.showToast('[축제 당일 모드] 가로 스크롤 팝업 안내 화면입니다.');
       }
     };
 
@@ -775,6 +775,90 @@ const SESIM = {
       btnDday.addEventListener('click', () => setMode('dday'));
       btnFest.addEventListener('click', () => setMode('festival'));
     }
+
+    // 바로가기 메뉴 드로어 (사이드바) 제어
+    const menuBtn = document.getElementById('menu-btn');
+    const menuDrawer = document.getElementById('menu-drawer');
+    const drawerBackdrop = document.getElementById('menu-drawer-backdrop');
+    const closeDrawerBtn = document.getElementById('close-drawer-btn');
+
+    const openDrawer = () => {
+      if (menuDrawer && drawerBackdrop) {
+        drawerBackdrop.classList.remove('hidden');
+        menuDrawer.classList.remove('hidden');
+        setTimeout(() => {
+          menuDrawer.classList.add('open');
+          drawerBackdrop.classList.add('open');
+        }, 10);
+      }
+    };
+
+    const closeDrawer = () => {
+      if (menuDrawer && drawerBackdrop) {
+        menuDrawer.classList.remove('open');
+        drawerBackdrop.classList.remove('open');
+        setTimeout(() => {
+          menuDrawer.classList.add('hidden');
+          drawerBackdrop.classList.add('hidden');
+        }, 250);
+      }
+    };
+
+    if (menuBtn) menuBtn.addEventListener('click', openDrawer);
+    if (closeDrawerBtn) closeDrawerBtn.addEventListener('click', closeDrawer);
+    if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+
+    // 드로어 내부 링크 클릭
+    document.querySelectorAll('.drawer-nav-link[data-target]').forEach(link => {
+      link.addEventListener('click', () => {
+        closeDrawer();
+        const target = link.dataset.target;
+        this.scrollTo(target);
+      });
+    });
+
+    const drawerMinigame = document.getElementById('drawer-minigame-btn');
+    if (drawerMinigame) {
+      drawerMinigame.addEventListener('click', () => {
+        closeDrawer();
+        this.openMinigameModal();
+      });
+    }
+
+    const drawerVote = document.getElementById('drawer-vote-btn');
+    if (drawerVote) {
+      drawerVote.addEventListener('click', () => {
+        closeDrawer();
+        this.openModal('vote-modal');
+      });
+    }
+
+    const drawerAdmin = document.getElementById('drawer-admin-btn');
+    if (drawerAdmin) {
+      drawerAdmin.addEventListener('click', () => {
+        closeDrawer();
+        this.openAdminModal();
+      });
+    }
+
+    // 오늘의 급식 1일차 / 2일차 탭 전환
+    document.querySelectorAll('.meal-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.meal-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const mealDay = tab.dataset.meal;
+
+        const card1 = document.getElementById('meal-card-day1');
+        const card2 = document.getElementById('meal-card-day2');
+        if (mealDay === 'day1') {
+          if (card1) card1.classList.remove('hidden');
+          if (card2) card2.classList.add('hidden');
+        } else {
+          if (card1) card1.classList.add('hidden');
+          if (card2) card2.classList.remove('hidden');
+        }
+      });
+    });
 
     // 팝업 캐러셀 스크롤 & 인디케이터 연동
     const track = document.getElementById('popup-carousel-track');
@@ -807,7 +891,7 @@ const SESIM = {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        this.showToast(`🗺️ ${btn.textContent} 지도로 전환되었습니다.`);
+        this.showToast(`${btn.textContent} 지도로 전환되었습니다.`);
       });
     });
 
