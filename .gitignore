@@ -1,0 +1,4 @@
+# Firebase CLI 캐시/로그
+.firebase/
+firebase-debug.log
+firestore-debug.log

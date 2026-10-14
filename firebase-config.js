@@ -5,8 +5,10 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-// 사용자 제공 Firebase 환경설정
+// 사용자 제공 Firebase 환경설정 (공개되어도 되는 값. 데이터 보호는 firestore.rules가 담당)
 export const firebaseConfig = {
   apiKey: "AIzaSyC7B4fnTp-YqbWPIsLtmNrj_gjNL7D73PE",
   authDomain: "sesim-70a8b.firebaseapp.com",
@@ -17,20 +19,20 @@ export const firebaseConfig = {
   measurementId: "G-3VFN37DF1D"
 };
 
-// Firebase 앱 및 애널리틱스 초기화
+// 학생 학교 계정 이메일 도메인 (예: 'school.kr')
+// 비워두면 모든 Google 계정 로그인 허용. 채우면 firestore.rules 의 도메인도 같이 바꿀 것!
+export const SCHOOL_EMAIL_DOMAIN = '';
+
+// Firebase 앱 / 인증 / DB 초기화
 export const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
 export let analytics = null;
 
 try {
   analytics = getAnalytics(app);
-  console.log("Firebase Analytics initialized successfully.");
 } catch (e) {
   console.warn("Analytics initialization skipped (e.g. offline or blocked):", e);
 }
-
-// 전역 객체에 등록하여 기존 app.js와 원활히 연동
-window.firebaseApp = app;
-window.firebaseAnalytics = analytics;
-window.firebaseConfig = firebaseConfig;
 
 console.log("🔥 [SESIM] Firebase 연결 완료: sesim-70a8b");

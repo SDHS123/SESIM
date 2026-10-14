@@ -5,17 +5,32 @@
  * ========================================================
  */
 
+import { auth, db, SCHOOL_EMAIL_DOMAIN } from './firebase-config.js';
+import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, onSnapshot, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+// 활성 예약 상태 (대기열에 포함되는 상태)
+const ACTIVE_STATUSES = ['WAIT', 'CALLED'];
+
+// innerHTML 에 넣는 사용자 입력값 이스케이프
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 // 네임스페이스 객체
 const SESIM = {
-  // 현재 접속 학생 정보 (학교 이메일: 20262709@... 기반 자동 파싱 모의)
-  currentUser: {
-    studentId: '20262709',
-    grade: 2,
-    classNum: 7,
-    number: 9,
-    name: '박기령',
-    phone: '010-9876-5432'
-  },
+  // 현재 로그인한 학생 정보 (Google 로그인 후 학번 자동 파싱, 비로그인 시 null)
+  currentUser: null,
+
+  // 부스별 실시간 대기열 { boothId: [예약, ...] } (Firestore reservations 컬렉션)
+  waitlists: {},
+
+  // 관리자 화면용 학생 프로필 캐시 { uid: users 문서 }
+  profileCache: {},
+
+  _unsubReservations: null,
 
   // 부스 마스터 데이터
   booths: [
@@ -28,12 +43,7 @@ const SESIM = {
       room: '1-1반',
       status: 'OPEN', // OPEN, BREAK, CLOSED
       pin: '1001',
-      maxWait: 8,
-      waitlist: [
-        { name: '1-2 김민수', phone: '010-1111-2222', party: 2, status: 'WAIT', time: '10:15' },
-        { name: '2-3 이지혜', phone: '010-3333-4444', party: 3, status: 'WAIT', time: '10:20' },
-        { name: '3-1 정우진', phone: '010-5555-6666', party: 1, status: 'WAIT', time: '10:25' }
-      ]
+      maxWait: 8
     },
     {
       id: 2,
@@ -44,11 +54,7 @@ const SESIM = {
       room: '1-2반',
       status: 'OPEN',
       pin: '1002',
-      maxWait: 10,
-      waitlist: [
-        { name: '2-5 한소희', phone: '010-2222-3333', party: 2, status: 'WAIT', time: '10:10' },
-        { name: '1-4 박도윤', phone: '010-4444-5555', party: 1, status: 'WAIT', time: '10:18' }
-      ]
+      maxWait: 10
     },
     {
       id: 3,
@@ -59,10 +65,7 @@ const SESIM = {
       room: '과학 1실',
       status: 'BREAK',
       pin: '1003',
-      maxWait: 5,
-      waitlist: [
-        { name: '3-4 최유진', phone: '010-7777-8888', party: 2, status: 'WAIT', time: '10:30' }
-      ]
+      maxWait: 5
     },
     {
       id: 4,
@@ -73,12 +76,7 @@ const SESIM = {
       room: '컴퓨터실',
       status: 'OPEN',
       pin: '1004',
-      maxWait: 12,
-      waitlist: [
-        { name: '2-2 장서준', phone: '010-8888-9999', party: 2, status: 'WAIT', time: '10:12' },
-        { name: '1-7 강다은', phone: '010-9999-0000', party: 1, status: 'WAIT', time: '10:19' },
-        { name: '2-7 박기령', phone: '010-9876-5432', party: 2, status: 'WAIT', time: '10:22' }
-      ]
+      maxWait: 12
     },
     {
       id: 5,
@@ -89,8 +87,7 @@ const SESIM = {
       room: '음악실 옆',
       status: 'CLOSED',
       pin: '1005',
-      maxWait: 6,
-      waitlist: []
+      maxWait: 6
     }
   ],
 
@@ -102,51 +99,163 @@ const SESIM = {
 
   // 초기화 메서드
   init() {
-    this.loadState();
     this.renderBooths('all');
     this.renderMyReservations();
     this.startCountdown();
     this.setupEventListeners();
     this.updateUserBadge();
+    this.watchAuth();
   },
 
-  // 로컬 스토리지 불러오기
-  loadState() {
-    const saved = localStorage.getItem('sesim_my_reservations');
-    if (saved) {
-      try {
-        this.myReservations = JSON.parse(saved);
-      } catch (e) {
-        this.myReservations = [];
+  // ==================== Google 로그인 ====================
+  async login() {
+    // 카카오톡 인앱 브라우저는 Google 로그인이 차단되므로 외부 브라우저로 열기
+    if (/KAKAOTALK/i.test(navigator.userAgent)) {
+      location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+      return;
+    }
+
+    const provider = new GoogleAuthProvider();
+    const params = { prompt: 'select_account' };
+    if (SCHOOL_EMAIL_DOMAIN) params.hd = SCHOOL_EMAIL_DOMAIN;
+    provider.setCustomParameters(params);
+
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+      if (e.code === 'auth/popup-blocked') {
+        this.showToast('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해주세요.');
+      } else if (e.code === 'auth/unauthorized-domain') {
+        this.showToast('승인되지 않은 도메인입니다. (Firebase 승인된 도메인 확인)');
+      } else {
+        this.showToast('로그인 실패: ' + e.code);
       }
-    } else {
-      // 초기 데모 예약 1건 세팅
-      this.myReservations = [
-        {
-          id: 'res_' + Date.now(),
-          boothId: 4,
-          boothTitle: '픽셀 월드 레트로 오락실',
-          room: '컴퓨터실',
-          order: 3,
-          party: 2,
-          status: 'WAIT', // WAIT or CALLED
-          time: '방금 전'
-        }
-      ];
-      this.saveState();
     }
   },
 
-  saveState() {
-    localStorage.setItem('sesim_my_reservations', JSON.stringify(this.myReservations));
+  async logout() {
+    if (!confirm('로그아웃 하시겠습니까?')) return;
+    await signOut(auth);
+    this.showToast('로그아웃 되었습니다.');
   },
 
-  // 유저 뱃지 업데이트
+  // 학교 이메일 "20262709@..." → 2026학년도 2학년 7반 9번
+  parseStudent(user) {
+    const id = user.email.split('@')[0];
+    const ok = /^\d{8}$/.test(id);
+    return {
+      studentId: id,
+      grade: ok ? Number(id[4]) : null,
+      classNum: ok ? Number(id[5]) : null,
+      number: ok ? Number(id.slice(6)) : null,
+      name: user.displayName || id
+    };
+  },
+
+  // 로그인 상태 변화 감지 (새로고침해도 로그인 유지됨)
+  watchAuth() {
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        this.currentUser = null;
+        this.stopListeningReservations();
+        this.updateUserBadge();
+        this.renderMyReservations();
+        this.renderBooths();
+        return;
+      }
+
+      if (SCHOOL_EMAIL_DOMAIN && !user.email.endsWith('@' + SCHOOL_EMAIL_DOMAIN)) {
+        await signOut(auth);
+        this.showToast(`학교 계정(@${SCHOOL_EMAIL_DOMAIN})으로만 로그인할 수 있습니다.`);
+        return;
+      }
+
+      const profile = this.parseStudent(user);
+      this.currentUser = { uid: user.uid, email: user.email, phone: '', ...profile };
+      this.updateUserBadge();
+      this.listenReservations();
+
+      // users 컬렉션에 학생 프로필 저장 (첫 로그인 = 자동 가입)
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        await setDoc(userRef, { ...profile, email: user.email, lastLogin: serverTimestamp() }, { merge: true });
+        const snap = await getDoc(userRef);
+        this.currentUser.phone = snap.data()?.phone || '';
+      } catch (e) {
+        console.error('[SESIM] 프로필 저장 실패:', e);
+      }
+    });
+  },
+
+  // 헤더 프로필 칩 (비로그인 시 로그인 버튼 역할)
   updateUserBadge() {
     const badge = document.getElementById('user-display-name');
-    if (badge) {
-      badge.textContent = `${this.currentUser.grade}-${this.currentUser.classNum} ${this.currentUser.name}`;
+    if (!badge) return;
+    const u = this.currentUser;
+    if (!u) {
+      badge.textContent = 'Google 로그인';
+    } else if (u.grade) {
+      badge.textContent = `${u.grade}-${u.classNum} ${u.name}`;
+    } else {
+      badge.textContent = u.name;
     }
+  },
+
+  // ==================== Firestore 실시간 예약 동기화 ====================
+  listenReservations() {
+    this.stopListeningReservations();
+    const q = query(collection(db, 'reservations'), where('status', 'in', ACTIVE_STATUSES));
+
+    this._unsubReservations = onSnapshot(q, (snap) => {
+      // 서버 저장 전(pending) 문서는 createdAt 이 null 이므로 맨 뒤로 정렬
+      const ts = (r) => r.createdAt?.toMillis() ?? Number.MAX_SAFE_INTEGER;
+      const all = snap.docs
+        .map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }))
+        .sort((a, b) => ts(a) - ts(b));
+
+      this.waitlists = {};
+      all.forEach(r => (this.waitlists[r.boothId] ??= []).push(r));
+
+      const prevCalled = new Set(this.myReservations.filter(r => r.status === 'CALLED').map(r => r.id));
+      const uid = this.currentUser?.uid;
+      this.myReservations = all
+        .filter(r => r.uid === uid)
+        .map(r => {
+          const booth = this.booths.find(b => b.id === r.boothId);
+          return {
+            ...r,
+            boothTitle: booth?.title ?? `부스 #${r.boothId}`,
+            room: booth?.room ?? '',
+            order: this.waitlists[r.boothId].findIndex(x => x.id === r.id) + 1
+          };
+        });
+
+      // 새로 입장 호출된 예약이 있으면 진동 + 알림
+      const newlyCalled = this.myReservations.find(r => r.status === 'CALLED' && !prevCalled.has(r.id));
+      if (newlyCalled) {
+        if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+        this.showToast(`🔔 [${newlyCalled.boothTitle}] 입장 차례입니다! 부스로 와주세요.`);
+      }
+
+      this.renderMyReservations();
+      this.renderBooths(this.currentFilter);
+      if (this.currentAdminBoothId) this.renderAdminDashboard();
+    }, (err) => {
+      console.error('[SESIM] 예약 실시간 동기화 실패:', err);
+      this.showToast('예약 정보를 불러오지 못했습니다. (' + err.code + ')');
+    });
+  },
+
+  stopListeningReservations() {
+    if (this._unsubReservations) this._unsubReservations();
+    this._unsubReservations = null;
+    this.waitlists = {};
+    this.myReservations = [];
+  },
+
+  waitCount(boothId) {
+    return this.waitlists[boothId]?.length ?? 0;
   },
 
   // D-Day 실시간 카운트다운 타이머 (2027년 1월 6일 08:20 개막 기준)
@@ -189,9 +298,12 @@ const SESIM = {
   },
 
   // 부스 리스트 렌더링
-  renderBooths(filter = 'all') {
+  currentFilter: 'all',
+
+  renderBooths(filter = this.currentFilter) {
     const container = document.getElementById('booth-list');
     if (!container) return;
+    this.currentFilter = filter;
 
     let filtered = this.booths;
     if (filter === 'open') {
@@ -231,10 +343,10 @@ const SESIM = {
           <div class="booth-footer">
             <div class="booth-meta">
               <span>📍 ${booth.room}</span>
-              <span>👥 대기 ${booth.waitlist.length}팀</span>
+              <span>👥 대기 ${this.waitCount(booth.id)}팀</span>
             </div>
-            <button class="btn-reserve" 
-              ${!isActionable || isAlreadyBooked ? 'disabled' : ''} 
+            <button class="btn-reserve"
+              ${!isActionable || isAlreadyBooked ? 'disabled' : ''}
               onclick="SESIM.openReserveModal(${booth.id})">
               ${isAlreadyBooked ? '예약 완료됨' : (booth.status === 'OPEN' ? '예약하기' : '예약불가')}
             </button>
@@ -252,6 +364,16 @@ const SESIM = {
 
     badge.textContent = `${this.myReservations.length} / 2개 예약 중`;
 
+    if (!this.currentUser) {
+      container.innerHTML = `
+        <div class="empty-res">
+          부스 예약은 학교 Google 계정으로 로그인한 뒤 이용할 수 있습니다.
+          <br><button class="text-btn" onclick="SESIM.login()">Google 로그인 →</button>
+        </div>
+      `;
+      return;
+    }
+
     if (this.myReservations.length === 0) {
       container.innerHTML = `
         <div class="empty-res">
@@ -266,22 +388,28 @@ const SESIM = {
       return `
         <div class="my-ticket-card">
           <div class="ticket-info">
-            <h4>${res.boothTitle}</h4>
-            <p>위치: ${res.room} | 인원: ${res.party}명 | 대기순번: <strong>${res.order}번</strong></p>
+            <h4>${esc(res.boothTitle)}</h4>
+            <p>위치: ${esc(res.room)} | 인원: ${esc(res.party)}명 | 대기순번: <strong>${res.order}번</strong></p>
           </div>
           <div class="ticket-status">
             <span class="status-badge ${isCalled ? 'called' : 'wait'}">
               ${isCalled ? '🔔 입장 호출!' : '⏳ 대기중'}
             </span>
-            <button class="btn-cancel-ticket" onclick="SESIM.cancelReservation('${res.id}')">예약 취소</button>
+            <button class="btn-cancel-ticket" onclick="SESIM.cancelReservation('${esc(res.id)}')">예약 취소</button>
           </div>
         </div>
       `;
     }).join('');
   },
 
-  // 부스 예약 모달 열기 (2개 제한 사전 검사)
+  // 부스 예약 모달 열기 (로그인 + 2개 제한 사전 검사)
   openReserveModal(boothId) {
+    if (!this.currentUser) {
+      this.showToast('학교 Google 계정으로 먼저 로그인해주세요.');
+      this.login();
+      return;
+    }
+
     // 1인당 2개 제한 검사!
     if (this.myReservations.length >= 2) {
       this.showToast('⚠️ 1인당 최대 2개 부스까지만 동시 예약 가능합니다!');
@@ -300,12 +428,15 @@ const SESIM = {
       return;
     }
 
+    const u = this.currentUser;
     document.getElementById('modal-booth-title').textContent = booth.title;
     document.getElementById('modal-booth-desc').textContent = booth.desc;
     document.getElementById('modal-booth-loc').textContent = `위치: ${booth.room}`;
-    document.getElementById('modal-booth-wait').textContent = `현재 대기: ${booth.waitlist.length}팀`;
-    document.getElementById('reserve-student-info').value = `${this.currentUser.grade}학년 ${this.currentUser.classNum}반 ${this.currentUser.number}번 ${this.currentUser.name}`;
-    document.getElementById('reserve-phone').value = this.currentUser.phone;
+    document.getElementById('modal-booth-wait').textContent = `현재 대기: ${this.waitCount(booth.id)}팀`;
+    document.getElementById('reserve-student-info').value = u.grade
+      ? `${u.grade}학년 ${u.classNum}반 ${u.number}번 ${u.name}`
+      : `${u.name} (${u.email})`;
+    document.getElementById('reserve-phone').value = u.phone || '';
 
     // 폼에 boothId 저장
     document.getElementById('reserve-form').dataset.boothId = boothId;
@@ -313,74 +444,63 @@ const SESIM = {
     this.openModal('reserve-modal');
   },
 
-  // 예약 신청 제출 처리
-  handleReserveSubmit(e) {
+  // 예약 신청 제출 처리 → Firestore reservations 에 저장
+  async handleReserveSubmit(e) {
     e.preventDefault();
+    if (!this.currentUser) return this.showToast('먼저 로그인해주세요.');
+
     const boothId = parseInt(document.getElementById('reserve-form').dataset.boothId, 10);
-    const phone = document.getElementById('reserve-phone').value;
+    const phone = document.getElementById('reserve-phone').value.trim();
     const party = parseInt(document.getElementById('reserve-party').value, 10);
     const booth = this.booths.find(b => b.id === boothId);
-
     if (!booth) return;
 
-    // 대기 번호 계산
-    const newOrder = booth.waitlist.length + 1;
-
-    // 부스 대기열에 추가
-    const waitItem = {
-      name: `${this.currentUser.grade}-${this.currentUser.classNum} ${this.currentUser.name}`,
-      phone: phone,
-      party: party,
-      status: 'WAIT',
-      time: '방금 전'
-    };
-    booth.waitlist.push(waitItem);
-
-    // 내 티켓 생성
-    const newReservation = {
-      id: 'res_' + Date.now(),
-      boothId: booth.id,
-      boothTitle: booth.title,
-      room: booth.room,
-      order: newOrder,
-      party: party,
-      status: 'WAIT',
-      time: '방금 전'
-    };
-
-    this.myReservations.push(newReservation);
-    this.saveState();
-
-    this.closeModal('reserve-modal');
-    this.renderMyReservations();
-    this.renderBooths();
-    this.showToast(`🎉 ${booth.title} 예약 완료! (대기번호 ${newOrder}번)`);
-
-    // 상단 내 예약 영역으로 부드럽게 스크롤
-    document.getElementById('my-reservations-banner').scrollIntoView({ behavior: 'smooth' });
-  },
-
-  // 예약 취소
-  cancelReservation(resId) {
-    if (!confirm('예약을 취소하시겠습니까? 대기 순번이 초기화됩니다.')) return;
-
-    const res = this.myReservations.find(r => r.id === resId);
-    if (res) {
-      const booth = this.booths.find(b => b.id === res.boothId);
-      if (booth) {
-        // 부스 대기열에서 제거
-        booth.waitlist = booth.waitlist.filter(w => !w.name.includes(this.currentUser.name));
-      }
+    if (this.myReservations.length >= 2) {
+      return this.showToast('⚠️ 1인당 최대 2개 부스까지만 동시 예약 가능합니다!');
     }
 
-    this.myReservations = this.myReservations.filter(r => r.id !== resId);
-    this.saveState();
-    this.renderMyReservations();
-    this.renderBooths();
-    this.showToast('예약이 정상적으로 취소되었습니다.');
+    const submitBtn = document.getElementById('btn-submit-reserve');
+    submitBtn.disabled = true;
+
+    try {
+      // 연락처는 본인/관리자만 읽을 수 있는 users 문서에 저장
+      await setDoc(doc(db, 'users', this.currentUser.uid),
+        { phone, phoneConsentAt: serverTimestamp() }, { merge: true });
+      this.currentUser.phone = phone;
+
+      await addDoc(collection(db, 'reservations'), {
+        uid: this.currentUser.uid,
+        boothId: booth.id,
+        party,
+        status: 'WAIT',
+        createdAt: serverTimestamp()   // 서버 시간 기준 순번 (조작 불가)
+      });
+
+      this.closeModal('reserve-modal');
+      this.showToast(`🎉 ${booth.title} 예약 완료!`);
+      document.getElementById('my-reservations-banner').scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      console.error('[SESIM] 예약 실패:', err);
+      this.showToast('예약 실패: ' + err.code);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  },
+
+  // 예약 취소 (문서는 남기고 상태만 CANCELED 로 변경 → 기록 보존)
+  async cancelReservation(resId) {
+    if (!confirm('예약을 취소하시겠습니까? 대기 순번이 초기화됩니다.')) return;
+    try {
+      await updateDoc(doc(db, 'reservations', resId), { status: 'CANCELED' });
+      this.showToast('예약이 정상적으로 취소되었습니다.');
+    } catch (err) {
+      console.error('[SESIM] 취소 실패:', err);
+      this.showToast('취소 실패: ' + err.code);
+    }
   },
 
   // ==================== 부스 관리자 모드 ====================
+  // ※ PIN 은 화면 진입용일 뿐, 실제 호출/완료 처리는 Firestore admins 컬렉션에 등록된 계정만 가능
   openAdminModal() {
     this.openModal('admin-modal');
   },
@@ -397,7 +517,7 @@ const SESIM = {
       this.renderAdminDashboard();
       this.showToast(`🔑 [${booth.title}] 관리자 로그인 성공!`);
     } else {
-      alert('비밀번호(PIN)가 일치하지 않습니다! (힌트: 1001, 1002, 1003, 1004 중 하나)');
+      alert('비밀번호(PIN)가 일치하지 않습니다!');
     }
   },
 
@@ -409,12 +529,26 @@ const SESIM = {
     this.showToast('관리자 로그아웃 되었습니다.');
   },
 
+  // 관리자 화면용 학생 프로필 조회 (admins 등록 계정만 읽기 가능)
+  async loadProfile(uid) {
+    if (uid in this.profileCache) return;
+    this.profileCache[uid] = null;
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      this.profileCache[uid] = snap.data() || {};
+    } catch (e) {
+      this.profileCache[uid] = { denied: true };
+    }
+    if (this.currentAdminBoothId) this.renderAdminDashboard();
+  },
+
   renderAdminDashboard() {
     const booth = this.booths.find(b => b.id === this.currentAdminBoothId);
     if (!booth) return;
+    const waitlist = this.waitlists[booth.id] || [];
 
     document.getElementById('admin-active-booth-name').textContent = booth.title;
-    document.getElementById('admin-wait-count').textContent = booth.waitlist.length;
+    document.getElementById('admin-wait-count').textContent = waitlist.length;
 
     // 상태 버튼 활성화 갱신
     document.querySelectorAll('.status-btn').forEach(btn => {
@@ -422,70 +556,72 @@ const SESIM = {
     });
 
     const listContainer = document.getElementById('admin-waitlist-items');
-    if (booth.waitlist.length === 0) {
+    if (!this.currentUser) {
+      listContainer.innerHTML = '<p class="empty-res">대기 명단을 보려면 Google 로그인이 필요합니다.</p>';
+      return;
+    }
+    if (waitlist.length === 0) {
       listContainer.innerHTML = '<p class="empty-res">현재 대기 중인 예약자가 없습니다.</p>';
       return;
     }
 
-    listContainer.innerHTML = booth.waitlist.map((wait, idx) => {
+    listContainer.innerHTML = waitlist.map((wait, idx) => {
+      if (!(wait.uid in this.profileCache)) this.loadProfile(wait.uid);
+      const p = this.profileCache[wait.uid];
+      const who = !p ? '불러오는 중...'
+        : p.denied ? '(관리자 권한 필요)'
+        : `${p.studentId || ''} ${p.name || ''}`;
+      const phone = p?.phone || '';
+      const time = wait.createdAt?.toDate?.().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) || '-';
       const isCalled = wait.status === 'CALLED';
       return `
         <div class="admin-waitlist-card">
           <div class="admin-waitlist-info">
-            <strong>${idx + 1}번. ${wait.name} (${wait.party}명)</strong>
-            <span>📞 ${wait.phone} | 예약시간: ${wait.time}</span>
+            <strong>${idx + 1}번. ${esc(who)} (${esc(wait.party)}명)</strong>
+            <span>📞 ${esc(phone || '-')} | 예약시간: ${esc(time)}</span>
           </div>
           <div class="admin-card-actions">
             <!-- 비상 전화/문자 버튼 -->
-            <a href="tel:${wait.phone}" class="btn-call-phone" title="전화 걸기">📞 전화</a>
-            <button class="btn-call" onclick="SESIM.callStudent(${idx})">
+            ${phone ? `<a href="tel:${esc(phone)}" class="btn-call-phone" title="전화 걸기">📞 전화</a>` : ''}
+            <button class="btn-call" onclick="SESIM.callStudent('${esc(wait.id)}')">
               ${isCalled ? '호출중 (재호출)' : '🔔 입장 호출'}
             </button>
-            <button class="btn-cancel-ticket" onclick="SESIM.completeStudentEntry(${idx})">입장완료</button>
+            <button class="btn-cancel-ticket" onclick="SESIM.completeStudentEntry('${esc(wait.id)}')">입장완료</button>
           </div>
         </div>
       `;
     }).join('');
   },
 
-  // 부스 운영자가 학생 호출 시 (웹 알림 및 내 티켓 상태 업데이트)
-  callStudent(index) {
-    const booth = this.booths.find(b => b.id === this.currentAdminBoothId);
-    if (!booth || !booth.waitlist[index]) return;
-
-    const student = booth.waitlist[index];
-    student.status = 'CALLED';
-
-    // 만약 현재 로그인된 학생 본인이면 내 티켓에도 즉시 CALLED 반영
-    this.myReservations.forEach(r => {
-      if (r.boothId === booth.id) {
-        r.status = 'CALLED';
-      }
-    });
-    this.saveState();
-    this.renderMyReservations();
-    this.renderAdminDashboard();
-
-    this.showToast(`📢 ${student.name} 학생에게 입장 호출 알림을 발송했습니다!`);
+  // 관리자 예약 상태 변경 공통 처리
+  async setReservationStatus(resId, status) {
+    try {
+      await updateDoc(doc(db, 'reservations', resId), { status });
+      return true;
+    } catch (err) {
+      console.error('[SESIM] 상태 변경 실패:', err);
+      this.showToast(err.code === 'permission-denied'
+        ? '권한이 없습니다. (Firestore admins 컬렉션에 등록된 계정만 가능)'
+        : '처리 실패: ' + err.code);
+      return false;
+    }
   },
 
-  // 학생 입장 완료 처리 (명단에서 제거)
-  completeStudentEntry(index) {
-    const booth = this.booths.find(b => b.id === this.currentAdminBoothId);
-    if (!booth) return;
-
-    const completed = booth.waitlist.splice(index, 1)[0];
-    // 내 티켓에서도 해당 부스 완료 처리 (자동 제거)
-    this.myReservations = this.myReservations.filter(r => r.boothId !== booth.id);
-    this.saveState();
-
-    this.renderMyReservations();
-    this.renderBooths();
-    this.renderAdminDashboard();
-    this.showToast(`✅ ${completed.name} 학생 입장 완료 처리되었습니다.`);
+  // 부스 운영자가 학생 호출 (학생의 내 티켓 화면에 실시간 반영)
+  async callStudent(resId) {
+    if (await this.setReservationStatus(resId, 'CALLED')) {
+      this.showToast('📢 입장 호출 알림을 발송했습니다!');
+    }
   },
 
-  // 부스 상태 변경
+  // 학생 입장 완료 처리 (대기열에서 빠짐)
+  async completeStudentEntry(resId) {
+    if (await this.setReservationStatus(resId, 'DONE')) {
+      this.showToast('✅ 입장 완료 처리되었습니다.');
+    }
+  },
+
+  // 부스 상태 변경 (※ 부스 정보는 아직 Firestore 미연동 → 현재 화면에만 반영)
   updateBoothStatus(newStatus) {
     const booth = this.booths.find(b => b.id === this.currentAdminBoothId);
     if (!booth) return;
@@ -711,6 +847,12 @@ const SESIM = {
 
   // ==================== 이벤트 리스너 세팅 ====================
   setupEventListeners() {
+    // 헤더 프로필 칩: 비로그인 → Google 로그인, 로그인 → 로그아웃
+    document.getElementById('user-profile-btn').addEventListener('click', () => {
+      if (this.currentUser) this.logout();
+      else this.login();
+    });
+
     // 퀵 메뉴 네비게이션 클릭
     document.querySelectorAll('.quick-nav .nav-item[data-target]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -923,6 +1065,9 @@ const SESIM = {
     });
   }
 };
+
+// HTML onclick="SESIM.xxx()" 에서 접근할 수 있도록 전역 등록 (모듈 스코프 → window)
+window.SESIM = SESIM;
 
 // 앱 초기화 실행
 window.addEventListener('DOMContentLoaded', () => {

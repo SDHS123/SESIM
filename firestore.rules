@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// 세심제(SESIM) Firestore 보안 규칙
+// 적용 방법: Firebase 콘솔 → Firestore Database → 규칙 탭에 붙여넣고 [게시]
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 로그인한 학생인지 확인
+    // 학교 도메인이 정해지면 아래 줄 주석을 풀고 도메인을 바꾸세요. (firebase-config.js 의 SCHOOL_EMAIL_DOMAIN 도 같이)
+    function isSchool() {
+      return request.auth != null
+        && request.auth.token.email_verified == true;
+        // && request.auth.token.email.matches('.*@학교도메인[.]kr$');
+    }
+
+    // 총괄 관리자: admins/{내 UID} 문서가 있으면 관리자 (콘솔에서만 추가)
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // 학생 프로필 (학번, 이름, 전화번호) → 본인과 관리자만 열람
+    match /users/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if isSchool() && request.auth.uid == uid;
+    }
+
+    // 부스 예약 (개인정보 없음: uid, boothId, 인원, 상태, 시간) → 순번 계산 위해 학생 누구나 열람
+    match /reservations/{id} {
+      allow read: if isSchool();
+
+      allow create: if isSchool()
+        && request.resource.data.keys().hasOnly(['uid', 'boothId', 'party', 'status', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.boothId is int
+        && request.resource.data.party is int
+        && request.resource.data.party >= 1 && request.resource.data.party <= 4
+        && request.resource.data.status == 'WAIT'
+        && request.resource.data.createdAt == request.time;
+
+      // 학생 본인은 "취소"만 가능, 관리자는 호출/완료/노쇼 등 모든 상태 변경 가능
+      allow update: if (
+          request.auth != null
+          && resource.data.uid == request.auth.uid
+          && resource.data.status in ['WAIT', 'CALLED']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'CANCELED'
+        ) || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // 관리자 목록: 본인 것만 확인 가능, 앱에서 수정 불가
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+  }
+}

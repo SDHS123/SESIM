@@ -12,7 +12,8 @@
       "*.py",
       "*.pdf",
       "request.md",
-      "asd"
+      "asd",
+      "firestore.rules"
     ],
     "rewrites": [
       {
@@ -20,5 +21,8 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }

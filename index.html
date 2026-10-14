@@ -51,7 +51,7 @@
       <div class="header-actions">
         <button id="user-profile-btn" class="profile-chip" title="내 계정 정보">
           <span class="status-dot"></span>
-          <span id="user-display-name">2-7 박기령</span>
+          <span id="user-display-name">Google 로그인</span>
         </button>
         <button id="menu-btn" class="icon-btn" aria-label="바로가기 메뉴 열기">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -762,7 +762,7 @@
         <form id="reserve-form" onsubmit="SESIM.handleReserveSubmit(event)">
           <div class="form-group">
             <label>예약자 학번/이름 (학교 계정 연동)</label>
-            <input type="text" id="reserve-student-info" value="2학년 7반 9번 박기령" readonly class="input-readonly">
+            <input type="text" id="reserve-student-info" value="" readonly class="input-readonly">
           </div>
 
           <div class="form-group">
@@ -821,16 +821,16 @@
             <div class="form-group">
               <label>관리할 부스 선택</label>
               <select id="admin-booth-select">
-                <option value="1">1. [방탈출] 미지의 1-1반 (PIN: 1001)</option>
-                <option value="2">2. [타로/사주] 미래를 보는 찻집 (PIN: 1002)</option>
-                <option value="3">3. [분자요리] 세심 퀴진 실험실 (PIN: 1003)</option>
-                <option value="4">4. [레트로 오락실] 픽셀 월드 (PIN: 1004)</option>
-                <option value="5">5. [귀신의 집] 닫힌 교실 (PIN: 1005)</option>
+                <option value="1">1. [방탈출] 미지의 1-1반</option>
+                <option value="2">2. [타로/사주] 미래를 보는 찻집</option>
+                <option value="3">3. [분자요리] 세심 퀴진 실험실</option>
+                <option value="4">4. [레트로 오락실] 픽셀 월드</option>
+                <option value="5">5. [귀신의 집] 닫힌 교실</option>
               </select>
             </div>
             <div class="form-group">
               <label>부스 고유 PIN (비밀번호)</label>
-              <input type="password" id="admin-pin-input" placeholder="4자리 PIN 입력 (테스트: 1001)" maxlength="6">
+              <input type="password" id="admin-pin-input" placeholder="4자리 PIN 입력" maxlength="6">
             </div>
             <button class="btn-submit full-width" onclick="SESIM.authenticateAdmin()">관리자 인증 및 로그인</button>
           </div>
@@ -949,7 +949,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <!-- Firebase 연동 스크립트 -->
-  <script type="module" src="firebase-config.js"></script>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
