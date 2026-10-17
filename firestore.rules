@@ -7,6 +7,9 @@ rules_version = '2';
 //  - 일반 학생   : 문서 없음
 //  - 부스 관리자 : { role: 'booth', boothId: 숫자 }  → 자기 부스만 관리
 //  - 총괄 어드민 : { role: 'super' }                 → 전체 관리 (첫 총괄은 콘솔에서 직접 추가)
+//
+// 학생은 학교 계정(@sdhs.gwe.hs.kr)만 이용 가능. Gmail 등 외부 계정은 roles 에 등록된 경우만 허용
+// 1인 동시 예약 2개 제한은 slots/{uid} 카운터로 서버에서 강제
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -15,15 +18,18 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email_verified == true;
     }
 
-    // 학교 계정인지 확인
-    // 학교 도메인이 정해지면 아래 줄 주석을 풀고 도메인을 바꾸세요. (firebase-config.js 의 SCHOOL_EMAIL_DOMAIN 도 같이)
-    function isSchool() {
-      return signedIn();
-        // && request.auth.token.email.matches('.*@학교도메인[.]kr$');
-    }
-
     function myEmail() {
       return request.auth.token.email.lower();
+    }
+
+    // 학교 계정 이메일인지 (도메인 변경 시 firebase-config.js 의 SCHOOL_EMAIL_DOMAIN 도 같이)
+    function schoolEmail(email) {
+      return email.matches('.*@sdhs[.]gwe[.]hs[.]kr$');
+    }
+
+    // 사이트 이용 가능 계정: 학교 계정 또는 권한이 등록된 외부 계정(Gmail 총괄 등)
+    function isSchool() {
+      return signedIn() && (schoolEmail(myEmail()) || exists(rolePath()));
     }
 
     function rolePath() {
@@ -51,6 +57,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/booths/$(string(boothId));
     }
 
+    function slotPath(uid) {
+      return /databases/$(database)/documents/slots/$(uid);
+    }
+
+    function resPath(resId) {
+      return /databases/$(database)/documents/reservations/$(resId);
+    }
+
     function onlyChanged(fields) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
     }
@@ -68,6 +82,7 @@ service cloud.firestore {
         && (
           (request.resource.data.role == 'super' && !('boothId' in request.resource.data))
           || (request.resource.data.role == 'booth'
+              && schoolEmail(email)
               && request.resource.data.boothId is int
               && exists(boothPath(request.resource.data.boothId)))
         );
@@ -113,9 +128,15 @@ service cloud.firestore {
         && request.resource.data.status == 'WAIT'
         && request.resource.data.createdAt == request.time
         && get(boothPath(request.resource.data.boothId)).data.status == 'OPEN'
-        && existsAfter(/databases/$(database)/documents/contacts/$(id));
+        && existsAfter(/databases/$(database)/documents/contacts/$(id))
+        && getAfter(slotPath(request.auth.uid)).data.lastRes == id;
 
-      allow update: if onlyChanged(['status']) && (
+      // 대기열에서 빠지는 변경(취소/완료/노쇼)은 학생의 슬롯 반납과 함께만 가능
+      allow update: if onlyChanged(['status'])
+        && resource.data.status in ['WAIT', 'CALLED']
+        && (request.resource.data.status in ['WAIT', 'CALLED']
+            || getAfter(slotPath(resource.data.uid)).data.lastRes == id)
+        && (
           // 학생 본인: 대기/호출 상태인 예약을 "취소"만 가능
           (signedIn()
             && resource.data.uid == request.auth.uid
@@ -148,6 +169,46 @@ service cloud.firestore {
 
       allow update: if false;
       allow delete: if isSuper();
+    }
+
+    // ---------- 1인 동시 예약 슬롯 { count: 활성 예약 수(0~2), lastRes: 마지막으로 변경한 예약 ID } ----------
+    // +1: 학생 본인이 새 예약을 만들 때 (같은 트랜잭션에서 그 예약이 생성되어야 함)
+    // -1: 활성 예약이 취소/완료/노쇼로 바뀔 때 (본인 또는 담당 부스 관리자/총괄)
+    // → 예약 없이 카운터만 줄여서 2개 제한을 우회하는 것이 불가능
+    match /slots/{uid} {
+      allow read: if signedIn();
+
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['count', 'lastRes'])
+        && request.resource.data.count is int
+        && request.resource.data.count >= 0 && request.resource.data.count <= 2
+        && request.resource.data.lastRes is string
+        && (slotIncrement(uid) || slotDecrement(uid));
+
+      // 카운터가 어긋났을 때 총괄이 직접 고칠 수 있게
+      allow delete: if isSuper();
+    }
+
+    function oldSlotCount(uid) {
+      return exists(slotPath(uid)) ? get(slotPath(uid)).data.count : 0;
+    }
+
+    function slotIncrement(uid) {
+      let resId = request.resource.data.lastRes;
+      return request.auth.uid == uid
+        && request.resource.data.count == oldSlotCount(uid) + 1
+        && !exists(resPath(resId))
+        && getAfter(resPath(resId)).data.uid == uid;
+    }
+
+    function slotDecrement(uid) {
+      let resId = request.resource.data.lastRes;
+      let before = get(resPath(resId)).data;
+      return request.resource.data.count == oldSlotCount(uid) - 1
+        && before.uid == uid
+        && before.status in ['WAIT', 'CALLED']
+        && !(getAfter(resPath(resId)).data.status in ['WAIT', 'CALLED'])
+        && (request.auth.uid == uid || canManage(before.boothId));
     }
 
     // ---------- 사이트 전체 설정 (메인 화면 모드 등) ----------

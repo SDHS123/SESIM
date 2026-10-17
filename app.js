@@ -15,11 +15,16 @@ import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where,
-  onSnapshot, serverTimestamp, writeBatch
+  onSnapshot, serverTimestamp, writeBatch, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 // 활성 예약 상태 (대기열에 포함되는 상태)
 const ACTIVE_STATUSES = ['WAIT', 'CALLED'];
+
+// 1인당 동시 예약 한도 (firestore.rules 의 slots 규칙과 같은 값)
+const MAX_ACTIVE_RESERVATIONS = 2;
+
+const isSchoolEmail = (email) => email.toLowerCase().endsWith('@' + SCHOOL_EMAIL_DOMAIN);
 
 const BOOTH_STATUS_LABEL = { OPEN: '정상 운영', BREAK: '브레이크 타임', CLOSED: '금일 마감' };
 
@@ -135,9 +140,9 @@ const SESIM = {
     }
 
     const provider = new GoogleAuthProvider();
-    const params = { prompt: 'select_account' };
-    if (SCHOOL_EMAIL_DOMAIN) params.hd = SCHOOL_EMAIL_DOMAIN;
-    provider.setCustomParameters(params);
+    // hd(도메인 제한) 파라미터는 쓰지 않음: Gmail 총괄 어드민도 계정을 고를 수 있어야 함
+    // → 학교 계정 여부는 로그인 직후 watchAuth 와 보안 규칙에서 검사
+    provider.setCustomParameters({ prompt: 'select_account' });
 
     try {
       await signInWithPopup(auth, provider);
@@ -186,10 +191,19 @@ const SESIM = {
         return;
       }
 
-      if (SCHOOL_EMAIL_DOMAIN && !user.email.endsWith('@' + SCHOOL_EMAIL_DOMAIN)) {
-        await signOut(auth);
-        this.showToast(`학교 계정(@${SCHOOL_EMAIL_DOMAIN})으로만 로그인할 수 있습니다.`);
-        return;
+      // 학교 계정이 아니면 roles 에 권한이 등록된 계정(예: Gmail 총괄 어드민)만 허용
+      if (!isSchoolEmail(user.email)) {
+        let allowed = false;
+        try {
+          allowed = (await getDoc(doc(db, 'roles', user.email.toLowerCase()))).exists();
+        } catch (e) {
+          console.error('[SESIM] 권한 확인 실패:', e);
+        }
+        if (!allowed) {
+          await signOut(auth);
+          this.showToast(`학교 계정(@${SCHOOL_EMAIL_DOMAIN})으로 로그인해주세요.`);
+          return;
+        }
       }
 
       const profile = this.parseStudent(user);
@@ -556,7 +570,7 @@ const SESIM = {
     }
 
     // 1인당 2개 제한 검사!
-    if (this.myReservations.length >= 2) {
+    if (this.myReservations.length >= MAX_ACTIVE_RESERVATIONS) {
       this.showToast('⚠️ 1인당 최대 2개 부스까지만 동시 예약 가능합니다!');
       return;
     }
@@ -601,7 +615,7 @@ const SESIM = {
     const booth = this.boothById(boothId);
     if (!booth) return;
 
-    if (this.myReservations.length >= 2) {
+    if (this.myReservations.length >= MAX_ACTIVE_RESERVATIONS) {
       return this.showToast('⚠️ 1인당 최대 2개 부스까지만 동시 예약 가능합니다!');
     }
 
@@ -611,24 +625,33 @@ const SESIM = {
     try {
       const u = this.currentUser;
       const resRef = doc(collection(db, 'reservations'));
-      const batch = writeBatch(db);
-      batch.set(resRef, {
-        uid: u.uid,
-        boothId: booth.id,
-        party,
-        status: 'WAIT',
-        createdAt: serverTimestamp()   // 서버 시간 기준 순번 (조작 불가)
+      const slotRef = doc(db, 'slots', u.uid);
+
+      // 트랜잭션: 내 예약 슬롯(동시 예약 수) 확인 → 예약 + 연락처 + 슬롯 +1 을 한 번에 저장
+      // 두 기기에서 동시에 눌러도 한도를 넘지 못함 (서버 보안 규칙에서도 검사)
+      await runTransaction(db, async (tx) => {
+        const slotSnap = await tx.get(slotRef);
+        const count = slotSnap.data()?.count ?? 0;
+        if (count >= MAX_ACTIVE_RESERVATIONS) throw new Error('SLOT_FULL');
+
+        tx.set(resRef, {
+          uid: u.uid,
+          boothId: booth.id,
+          party,
+          status: 'WAIT',
+          createdAt: serverTimestamp()   // 서버 시간 기준 순번 (조작 불가)
+        });
+        tx.set(doc(db, 'contacts', resRef.id), {
+          uid: u.uid,
+          boothId: booth.id,
+          email: auth.currentUser.email,
+          studentId: u.studentId,
+          name: u.name,
+          phone,
+          createdAt: serverTimestamp()
+        });
+        tx.set(slotRef, { count: count + 1, lastRes: resRef.id });
       });
-      batch.set(doc(db, 'contacts', resRef.id), {
-        uid: u.uid,
-        boothId: booth.id,
-        email: auth.currentUser.email,
-        studentId: u.studentId,
-        name: u.name,
-        phone,
-        createdAt: serverTimestamp()
-      });
-      await batch.commit();
 
       // 다음 예약 때 자동 입력되도록 내 프로필에도 저장 (본인만 열람)
       setDoc(doc(db, 'users', u.uid), { phone, phoneConsentAt: serverTimestamp() }, { merge: true })
@@ -640,6 +663,10 @@ const SESIM = {
       document.getElementById('my-reservations-banner').scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       console.error('[SESIM] 예약 실패:', err);
+      if (err.message === 'SLOT_FULL') {
+        this.showToast('⚠️ 1인당 최대 2개 부스까지만 동시 예약 가능합니다!');
+        return;
+      }
       this.showToast(err.code === 'permission-denied'
         ? '예약할 수 없습니다. (부스가 운영 중인지 확인해주세요)'
         : '예약 실패: ' + err.code);
@@ -652,12 +679,30 @@ const SESIM = {
   async cancelReservation(resId) {
     if (!confirm('예약을 취소하시겠습니까? 대기 순번이 초기화됩니다.')) return;
     try {
-      await updateDoc(doc(db, 'reservations', resId), { status: 'CANCELED' });
+      await this.releaseReservation(resId, 'CANCELED');
       this.showToast('예약이 정상적으로 취소되었습니다.');
     } catch (err) {
       console.error('[SESIM] 취소 실패:', err);
       this.showToast('취소 실패: ' + err.code);
     }
+  },
+
+  // 예약을 대기열에서 빼면서(취소/완료/노쇼) 학생의 예약 슬롯도 1개 반납
+  async releaseReservation(resId, status) {
+    await runTransaction(db, async (tx) => {
+      const resRef = doc(db, 'reservations', resId);
+      const resSnap = await tx.get(resRef);
+      if (!resSnap.exists()) throw new Error('NOT_FOUND');
+      const res = resSnap.data();
+      if (!ACTIVE_STATUSES.includes(res.status)) return; // 이미 처리된 예약
+
+      const slotRef = doc(db, 'slots', res.uid);
+      const slotSnap = await tx.get(slotRef);
+      const count = slotSnap.data()?.count ?? 0;
+
+      tx.update(resRef, { status });
+      tx.set(slotRef, { count: Math.max(0, count - 1), lastRes: resId });
+    });
   },
 
   // ==================== 관리자 페이지 (부스 관리자 / 총괄 어드민) ====================
@@ -761,6 +806,7 @@ const SESIM = {
       const c = this.adminContacts[wait.id];
       const who = c ? `${c.studentId || ''} ${c.name || ''}` : '불러오는 중...';
       const phone = c?.phone || '';
+      const tel = phone.replace(/[^0-9+]/g, '');
       const time = wait.createdAt?.toDate?.().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) || '-';
       const isCalled = wait.status === 'CALLED';
       return `
@@ -771,7 +817,8 @@ const SESIM = {
           </div>
           <div class="admin-card-actions">
             <!-- 비상 전화/문자 버튼 -->
-            ${phone ? `<a href="tel:${esc(phone)}" class="btn-call-phone" title="전화 걸기">📞 전화</a>` : ''}
+            ${tel ? `<a href="tel:${esc(tel)}" class="btn-call-phone" title="전화 걸기">📞 전화</a>` : ''}
+            ${tel ? `<a href="${esc(this.smsLink(tel, booth))}" class="btn-call-phone" title="문자 보내기">💬 문자</a>` : ''}
             <button class="btn-call" onclick="SESIM.callStudent('${esc(wait.id)}')">
               ${isCalled ? '호출중 (재호출)' : '🔔 입장 호출'}
             </button>
@@ -783,10 +830,22 @@ const SESIM = {
     }).join('');
   },
 
+  // 문자 앱을 입장 안내 문구가 채워진 상태로 열기 (발송은 관리자 폰에서 직접)
+  smsLink(tel, booth) {
+    const body = `[세심제] ${booth?.title ?? '부스'} 입장 차례입니다! ${booth?.room ?? ''}(으)로 와주세요.`;
+    // iOS 는 "&body=", 안드로이드는 "?body=" 형식
+    const sep = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
+    return `sms:${tel}${sep}body=${encodeURIComponent(body)}`;
+  },
+
   // 관리자 예약 상태 변경 공통 처리
   async setReservationStatus(resId, status) {
     try {
-      await updateDoc(doc(db, 'reservations', resId), { status });
+      if (ACTIVE_STATUSES.includes(status)) {
+        await updateDoc(doc(db, 'reservations', resId), { status });
+      } else {
+        await this.releaseReservation(resId, status);
+      }
       return true;
     } catch (err) {
       console.error('[SESIM] 상태 변경 실패:', err);
@@ -905,8 +964,9 @@ const SESIM = {
     if (email === this.currentUser.email.toLowerCase()) {
       return this.showToast('본인 권한은 직접 변경할 수 없습니다.');
     }
-    if (SCHOOL_EMAIL_DOMAIN && !email.endsWith('@' + SCHOOL_EMAIL_DOMAIN)) {
-      return this.showToast(`학교 계정(@${SCHOOL_EMAIL_DOMAIN})만 지정할 수 있습니다.`);
+    // 부스 관리자는 학교 계정만, 총괄 어드민은 Gmail 등 외부 계정도 가능
+    if (roleType === 'booth' && !isSchoolEmail(email)) {
+      return this.showToast(`부스 관리자는 학교 계정(@${SCHOOL_EMAIL_DOMAIN})만 지정할 수 있습니다.`);
     }
     if (roleType === 'booth' && !this.boothsInDb) {
       return this.showToast('먼저 기본 부스 데이터를 등록해주세요.');

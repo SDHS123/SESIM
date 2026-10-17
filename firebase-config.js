@@ -19,9 +19,10 @@ export const firebaseConfig = {
   measurementId: "G-3VFN37DF1D"
 };
 
-// 학생 학교 계정 이메일 도메인 (예: 'school.kr')
-// 비워두면 모든 Google 계정 로그인 허용. 채우면 firestore.rules 의 도메인도 같이 바꿀 것!
-export const SCHOOL_EMAIL_DOMAIN = '';
+// 학생 학교 계정 이메일 도메인 (예: 20262709@sdhs.gwe.hs.kr)
+// 이 도메인이 아닌 계정(예: Gmail)은 roles 에 권한이 등록된 경우에만 로그인 허용
+// 바꿀 경우 firestore.rules 의 schoolEmail() 도 같이 바꿀 것!
+export const SCHOOL_EMAIL_DOMAIN = 'sdhs.gwe.hs.kr';
 
 // Firebase 앱 / 인증 / DB 초기화
 export const app = initializeApp(firebaseConfig);
