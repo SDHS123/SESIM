@@ -64,9 +64,9 @@
 
       <!-- 1. 히어로: D-Day 카운트다운 OR 당일 팝업 캐러셀 슬라이더 -->
       <section class="hero-section">
-        <!-- 모드 전환 테스트 스위처 (기획부 부장용 빠른 시뮬레이터) -->
-        <div class="view-mode-controller">
-          <span class="mode-label">화면 모드:</span>
+        <!-- 총괄 어드민 전용: 전체 학생 화면 모드 스위치 (admins 등록 계정에게만 보임) -->
+        <div class="view-mode-controller hidden" id="admin-mode-controller">
+          <span class="mode-label">🔒 전체 화면:</span>
           <div class="mode-buttons">
             <button id="mode-btn-dday" class="mode-toggle-btn active" title="D-Day 이전 카운트다운 화면">D-Day 사전 모드</button>
             <button id="mode-btn-festival" class="mode-toggle-btn" title="축제 당일 팝업 슬라이더 화면">축제 당일 모드</button>
@@ -801,56 +801,47 @@
     </div>
   </div>
 
-  <!-- 2. 부스 관리자 페이지 모달 (개별 권한 PIN 인증 시스템) -->
+  <!-- 2. 관리자 페이지 모달 (Google 계정 기반 권한: 총괄 어드민 / 부스 관리자) -->
   <div class="modal-overlay hidden" id="admin-modal">
     <div class="modal-sheet modal-lg">
       <div class="modal-header">
         <div>
-          <h3>부스 운영자 전용 관리자</h3>
-          <p class="sub-header-text">부스 대표 1인 개별 권한 인증</p>
+          <h3>부스 관리자 페이지</h3>
+          <p class="sub-header-text">총괄 어드민이 지정한 Google 계정만 이용 가능</p>
         </div>
         <button class="close-btn" onclick="SESIM.closeModal('admin-modal')">✕</button>
       </div>
       <div class="modal-body">
-        
-        <!-- 관리자 로그인 폼 (PIN 인증) -->
-        <div id="admin-login-view">
+
+        <!-- 권한 안내 (비로그인 / 권한 없음) -->
+        <div id="admin-gate-view">
           <div class="admin-login-box">
-            <h4>부스 관리자 인증</h4>
-            <p>총괄 어드민(학생회)에게 부여받은 담당 부스와 4자리 비밀번호(PIN)를 입력하세요.</p>
-            <div class="form-group">
-              <label>관리할 부스 선택</label>
-              <select id="admin-booth-select">
-                <option value="1">1. [방탈출] 미지의 1-1반</option>
-                <option value="2">2. [타로/사주] 미래를 보는 찻집</option>
-                <option value="3">3. [분자요리] 세심 퀴진 실험실</option>
-                <option value="4">4. [레트로 오락실] 픽셀 월드</option>
-                <option value="5">5. [귀신의 집] 닫힌 교실</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>부스 고유 PIN (비밀번호)</label>
-              <input type="password" id="admin-pin-input" placeholder="4자리 PIN 입력" maxlength="6">
-            </div>
-            <button class="btn-submit full-width" onclick="SESIM.authenticateAdmin()">관리자 인증 및 로그인</button>
+            <h4 id="admin-gate-title">관리자 로그인 필요</h4>
+            <p id="admin-gate-desc">학교 Google 계정으로 로그인해주세요.</p>
+            <button class="btn-submit full-width" id="admin-gate-login-btn" onclick="SESIM.login()">Google 로그인</button>
           </div>
         </div>
 
-        <!-- 관리자 대시보드 (인증 성공 후 노출) -->
+        <!-- 부스 관리 대시보드 (부스 관리자 = 자기 부스만, 총괄 = 전체 부스 선택) -->
         <div id="admin-dashboard-view" class="hidden">
           <div class="admin-dash-header">
             <div>
-              <span class="badge-role">인증 완료: 대표 운영자</span>
-              <h4 id="admin-active-booth-name">방탈출: 미지의 1-1반</h4>
+              <span class="badge-role" id="admin-role-badge">부스 관리자</span>
+              <h4 id="admin-active-booth-name"></h4>
             </div>
-            <button class="btn-logout" onclick="SESIM.logoutAdmin()">로그아웃</button>
+          </div>
+
+          <!-- 총괄 어드민 전용: 관리할 부스 선택 -->
+          <div class="form-group hidden" id="admin-booth-select-group">
+            <label for="admin-booth-select">관리할 부스 선택 (총괄)</label>
+            <select id="admin-booth-select"></select>
           </div>
 
           <!-- 부스 상태 토글 컨트롤 -->
           <div class="admin-status-control">
             <span>부스 운영 상태:</span>
             <div class="status-buttons">
-              <button class="status-btn active" data-status="OPEN" onclick="SESIM.updateBoothStatus('OPEN')">🟢 정상 운영</button>
+              <button class="status-btn" data-status="OPEN" onclick="SESIM.updateBoothStatus('OPEN')">🟢 정상 운영</button>
               <button class="status-btn" data-status="BREAK" onclick="SESIM.updateBoothStatus('BREAK')">🟡 브레이크 타임</button>
               <button class="status-btn" data-status="CLOSED" onclick="SESIM.updateBoothStatus('CLOSED')">🔴 금일 마감</button>
             </div>
@@ -860,11 +851,47 @@
           <div class="admin-waitlist-section">
             <div class="waitlist-header">
               <h5>실시간 예약 대기 명단 (<span id="admin-wait-count">0</span>명)</h5>
-              <span class="hint-text">입장 버튼을 누르면 학생에게 호출 알림이 갑니다</span>
+              <span class="hint-text">입장 호출을 누르면 학생 화면에 즉시 알림이 갑니다</span>
             </div>
             <div class="admin-list" id="admin-waitlist-items">
               <!-- 명단이 렌더링됩니다 -->
             </div>
+          </div>
+        </div>
+
+        <!-- 총괄 어드민 전용: 권한 관리 -->
+        <div id="super-panel" class="super-panel hidden">
+          <h5 class="super-panel-title">👑 권한 관리 (총괄 어드민 전용)</h5>
+          <p class="hint-text">부스 관리자로 지정할 학생의 학교 Google 이메일을 입력하세요. 지정 즉시 해당 학생 화면에 권한이 적용됩니다.</p>
+
+          <form id="role-form" class="role-form" onsubmit="SESIM.addRole(event)">
+            <div class="form-group">
+              <label for="role-email">Google 이메일</label>
+              <input type="email" id="role-email" placeholder="20262709@school.kr" required>
+            </div>
+            <div class="role-form-row">
+              <div class="form-group">
+                <label for="role-type">권한</label>
+                <select id="role-type">
+                  <option value="booth">부스 관리자</option>
+                  <option value="super">총괄 어드민</option>
+                </select>
+              </div>
+              <div class="form-group" id="role-booth-group">
+                <label for="role-booth">담당 부스</label>
+                <select id="role-booth"></select>
+              </div>
+            </div>
+            <button type="submit" class="btn-submit full-width">권한 부여</button>
+          </form>
+
+          <div class="admin-list" id="role-list">
+            <!-- 권한 목록이 렌더링됩니다 -->
+          </div>
+
+          <div class="super-seed-box hidden" id="booth-seed-box">
+            <p class="hint-text">⚠️ 데이터베이스에 등록된 부스가 없습니다. 기본 부스 목록을 등록해야 학생들이 예약할 수 있습니다.</p>
+            <button class="btn-submit full-width" onclick="SESIM.seedBooths()">기본 부스 데이터 등록</button>
           </div>
         </div>
 

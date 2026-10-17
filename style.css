@@ -2515,3 +2515,49 @@ body {
 .hidden {
   display: none !important;
 }
+
+/* ==================== 총괄 어드민 권한 관리 패널 ==================== */
+.super-panel {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: var(--pixel-border);
+}
+
+.super-panel-title {
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.super-panel > .hint-text {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.role-form {
+  margin-bottom: 14px;
+}
+
+.role-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.role-form-row .form-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.super-seed-box {
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--forsythia-butter);
+  border: var(--pixel-border);
+  border-radius: var(--pixel-radius);
+}
+
+.super-seed-box .hint-text {
+  display: block;
+  margin-bottom: 10px;
+}

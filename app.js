@@ -3,99 +3,116 @@
  * 2026 세심제 (SESIM) 웹 애플리케이션 프론트엔드 로직 (app.js)
  * 작성자: Antigravity x 강원사대부고 세심제 TF
  * ========================================================
+ *
+ * 권한 체계 (Firestore roles/{이메일} 문서로 관리, 실제 차단은 firestore.rules)
+ *  - 일반 학생   : 문서 없음 → 예약 / 본인 예약 취소
+ *  - 부스 관리자 : { role: 'booth', boothId } → 자기 부스 명단·연락처·호출·상태 변경
+ *  - 총괄 어드민 : { role: 'super' } → 전체 부스 관리 + 권한 부여 + 전체 화면 모드 전환
  */
 
 import { auth, db, SCHOOL_EMAIL_DOMAIN } from './firebase-config.js';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { doc, getDoc, setDoc, addDoc, updateDoc, collection, query, where, onSnapshot, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where,
+  onSnapshot, serverTimestamp, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 // 활성 예약 상태 (대기열에 포함되는 상태)
 const ACTIVE_STATUSES = ['WAIT', 'CALLED'];
+
+const BOOTH_STATUS_LABEL = { OPEN: '정상 운영', BREAK: '브레이크 타임', CLOSED: '금일 마감' };
 
 // innerHTML 에 넣는 사용자 입력값 이스케이프
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
+// 기본 부스 목록: Firestore booths 컬렉션이 비어 있을 때 화면 표시용 + 총괄 어드민 초기 등록용
+const DEFAULT_BOOTHS = [
+  {
+    id: 1,
+    club: '컴퓨터 & 수학 동아리',
+    title: '방탈출: 미지의 1-1반',
+    desc: '제한 시간 15분! 단서를 찾아 암호를 해독하고 교실을 탈출하라!',
+    floor: '1f',
+    room: '1-1반',
+    status: 'OPEN' // OPEN, BREAK, CLOSED
+  },
+  {
+    id: 2,
+    club: '인문학 & 심리 동아리',
+    title: '미래를 보는 세심 타로 & 사주',
+    desc: '너의 연애운, 학업운, 내년 대학운까지 꿰뚫어 보는 족집게 타로!',
+    floor: '1f',
+    room: '1-2반',
+    status: 'OPEN'
+  },
+  {
+    id: 3,
+    club: '융합 과학동아리',
+    title: '분자요리 실험실 (팝핑보바 만들기)',
+    desc: '화학 반응을 이용해 과일 주스로 직접 만드는 알록달록 구슬 주스!',
+    floor: '2f',
+    room: '과학 1실',
+    status: 'BREAK'
+  },
+  {
+    id: 4,
+    club: '게임 제작 동아리',
+    title: '픽셀 월드 레트로 오락실',
+    desc: '철권, 스트리트파이터, 테트리스 교내 최강자를 가리는 미니 대회!',
+    floor: '2f',
+    room: '컴퓨터실',
+    status: 'OPEN'
+  },
+  {
+    id: 5,
+    club: '연극 & 영상 제작부',
+    title: '공포 체험: 닫힌 교실의 비밀',
+    desc: '불 꺼진 3층 특별실에서 벌어지는 소름 돋는 심령 체험... (노약자 주의)',
+    floor: '2f',
+    room: '음악실 옆',
+    status: 'CLOSED'
+  }
+];
+
 // 네임스페이스 객체
 const SESIM = {
   // 현재 로그인한 학생 정보 (Google 로그인 후 학번 자동 파싱, 비로그인 시 null)
   currentUser: null,
 
+  // 내 권한 (null = 일반 학생, { role: 'booth', boothId } 또는 { role: 'super' })
+  role: null,
+
+  // 부스 목록 (Firestore booths 컬렉션 실시간 동기화, 비어 있으면 DEFAULT_BOOTHS 표시)
+  booths: DEFAULT_BOOTHS.map(b => ({ ...b })),
+  boothsInDb: false,
+
   // 부스별 실시간 대기열 { boothId: [예약, ...] } (Firestore reservations 컬렉션)
   waitlists: {},
-
-  // 관리자 화면용 학생 프로필 캐시 { uid: users 문서 }
-  profileCache: {},
-
-  _unsubReservations: null,
-
-  // 부스 마스터 데이터
-  booths: [
-    {
-      id: 1,
-      club: '컴퓨터 & 수학 동아리',
-      title: '방탈출: 미지의 1-1반',
-      desc: '제한 시간 15분! 단서를 찾아 암호를 해독하고 교실을 탈출하라!',
-      floor: '1f',
-      room: '1-1반',
-      status: 'OPEN', // OPEN, BREAK, CLOSED
-      pin: '1001',
-      maxWait: 8
-    },
-    {
-      id: 2,
-      club: '인문학 & 심리 동아리',
-      title: '미래를 보는 세심 타로 & 사주',
-      desc: '너의 연애운, 학업운, 내년 대학운까지 꿰뚫어 보는 족집게 타로!',
-      floor: '1f',
-      room: '1-2반',
-      status: 'OPEN',
-      pin: '1002',
-      maxWait: 10
-    },
-    {
-      id: 3,
-      club: '융합 과학동아리',
-      title: '분자요리 실험실 (팝핑보바 만들기)',
-      desc: '화학 반응을 이용해 과일 주스로 직접 만드는 알록달록 구슬 주스!',
-      floor: '2f',
-      room: '과학 1실',
-      status: 'BREAK',
-      pin: '1003',
-      maxWait: 5
-    },
-    {
-      id: 4,
-      club: '게임 제작 동아리',
-      title: '픽셀 월드 레트로 오락실',
-      desc: '철권, 스트리트파이터, 테트리스 교내 최강자를 가리는 미니 대회!',
-      floor: '2f',
-      room: '컴퓨터실',
-      status: 'OPEN',
-      pin: '1004',
-      maxWait: 12
-    },
-    {
-      id: 5,
-      club: '연극 & 영상 제작부',
-      title: '공포 체험: 닫힌 교실의 비밀',
-      desc: '불 꺼진 3층 특별실에서 벌어지는 소름 돋는 심령 체험... (노약자 주의)',
-      floor: '2f',
-      room: '음악실 옆',
-      status: 'CLOSED',
-      pin: '1005',
-      maxWait: 6
-    }
-  ],
 
   // 내 현재 예약 목록 (동시 최대 2개 제한)
   myReservations: [],
 
-  // 현재 인증된 관리자 부스 ID
+  // 관리자 화면: 현재 관리 중인 부스 / 그 부스 예약자 연락처 { 예약ID: contacts 문서 }
   currentAdminBoothId: null,
+  adminContacts: {},
+
+  // 총괄 어드민 화면: 권한 목록
+  roleList: [],
+
+  // 전체 학생 화면 모드 ('dday' = 카운트다운, 'festival' = 당일 팝업 배너)
+  heroMode: 'dday',
+
+  _unsubReservations: null,
+  _unsubRole: null,
+  _unsubContacts: null,
+  _unsubRoleList: null,
+
+  isSuper() {
+    return this.role?.role === 'super';
+  },
 
   // 초기화 메서드
   init() {
@@ -104,6 +121,8 @@ const SESIM = {
     this.startCountdown();
     this.setupEventListeners();
     this.updateUserBadge();
+    this.listenSiteSettings();
+    this.listenBooths();
     this.watchAuth();
   },
 
@@ -158,10 +177,12 @@ const SESIM = {
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
         this.currentUser = null;
+        this.stopListeningRole();
         this.stopListeningReservations();
         this.updateUserBadge();
         this.renderMyReservations();
         this.renderBooths();
+        this.renderAdminModal();
         return;
       }
 
@@ -175,6 +196,7 @@ const SESIM = {
       this.currentUser = { uid: user.uid, email: user.email, phone: '', ...profile };
       this.updateUserBadge();
       this.listenReservations();
+      this.listenRole(user.email);
 
       // users 컬렉션에 학생 프로필 저장 (첫 로그인 = 자동 가입)
       try {
@@ -202,6 +224,86 @@ const SESIM = {
     }
   },
 
+  // ==================== 권한 (roles/{이메일}) ====================
+  // 내 권한 문서를 실시간 구독 → 총괄이 권한을 부여/해제하면 새로고침 없이 즉시 반영
+  listenRole(email) {
+    this.stopListeningRole();
+    this._unsubRole = onSnapshot(doc(db, 'roles', email.toLowerCase()), (snap) => {
+      const data = snap.data();
+      this.role = (data?.role === 'super' || data?.role === 'booth') ? data : null;
+      this.onRoleChanged();
+    }, (err) => {
+      console.error('[SESIM] 권한 조회 실패:', err);
+      this.role = null;
+      this.onRoleChanged();
+    });
+  },
+
+  stopListeningRole() {
+    if (this._unsubRole) this._unsubRole();
+    this._unsubRole = null;
+    this.role = null;
+    this.onRoleChanged();
+  },
+
+  onRoleChanged() {
+    // 전체 화면 모드 스위치는 총괄 어드민에게만 노출
+    document.getElementById('admin-mode-controller')?.classList.toggle('hidden', !this.isSuper());
+
+    // 총괄 어드민이면 권한 목록 구독, 아니면 해제
+    if (this.isSuper()) {
+      this.listenRoleList();
+    } else if (this._unsubRoleList) {
+      this._unsubRoleList();
+      this._unsubRoleList = null;
+      this.roleList = [];
+    }
+
+    this.renderAdminModal();
+  },
+
+  // ==================== 부스 목록 (booths 컬렉션) ====================
+  listenBooths() {
+    onSnapshot(collection(db, 'booths'), (snap) => {
+      this.boothsInDb = !snap.empty;
+      this.booths = snap.empty
+        ? DEFAULT_BOOTHS.map(b => ({ ...b }))
+        : snap.docs.map(d => ({ ...d.data(), id: Number(d.id) })).sort((a, b) => a.id - b.id);
+
+      this.renderBooths();
+      this.refreshMyReservationInfo();
+      this.renderMyReservations();
+      this.renderAdminModal();
+    }, (err) => {
+      console.error('[SESIM] 부스 정보 동기화 실패:', err);
+    });
+  },
+
+  boothById(id) {
+    return this.booths.find(b => b.id === id);
+  },
+
+  // 총괄 어드민: 기본 부스 목록을 Firestore 에 등록 (이미 있는 부스는 건드리지 않음)
+  async seedBooths() {
+    if (!this.isSuper()) return;
+    if (!confirm('기본 부스 5개를 데이터베이스에 등록하시겠습니까?')) return;
+    try {
+      const batch = writeBatch(db);
+      for (const b of DEFAULT_BOOTHS) {
+        const ref = doc(db, 'booths', String(b.id));
+        const snap = await getDoc(ref);
+        if (snap.exists()) continue;
+        const { id, ...data } = b;
+        batch.set(ref, { ...data, updatedAt: serverTimestamp(), updatedBy: this.currentUser.email });
+      }
+      await batch.commit();
+      this.showToast('✅ 기본 부스 데이터가 등록되었습니다.');
+    } catch (err) {
+      console.error('[SESIM] 부스 등록 실패:', err);
+      this.showToast('부스 등록 실패: ' + err.code);
+    }
+  },
+
   // ==================== Firestore 실시간 예약 동기화 ====================
   listenReservations() {
     this.stopListeningReservations();
@@ -219,17 +321,8 @@ const SESIM = {
 
       const prevCalled = new Set(this.myReservations.filter(r => r.status === 'CALLED').map(r => r.id));
       const uid = this.currentUser?.uid;
-      this.myReservations = all
-        .filter(r => r.uid === uid)
-        .map(r => {
-          const booth = this.booths.find(b => b.id === r.boothId);
-          return {
-            ...r,
-            boothTitle: booth?.title ?? `부스 #${r.boothId}`,
-            room: booth?.room ?? '',
-            order: this.waitlists[r.boothId].findIndex(x => x.id === r.id) + 1
-          };
-        });
+      this.myReservations = all.filter(r => r.uid === uid);
+      this.refreshMyReservationInfo();
 
       // 새로 입장 호출된 예약이 있으면 진동 + 알림
       const newlyCalled = this.myReservations.find(r => r.status === 'CALLED' && !prevCalled.has(r.id));
@@ -239,11 +332,24 @@ const SESIM = {
       }
 
       this.renderMyReservations();
-      this.renderBooths(this.currentFilter);
-      if (this.currentAdminBoothId) this.renderAdminDashboard();
+      this.renderBooths();
+      this.renderAdminDashboard();
     }, (err) => {
       console.error('[SESIM] 예약 실시간 동기화 실패:', err);
       this.showToast('예약 정보를 불러오지 못했습니다. (' + err.code + ')');
+    });
+  },
+
+  // 내 예약에 부스 이름 / 위치 / 현재 순번 채우기
+  refreshMyReservationInfo() {
+    this.myReservations = this.myReservations.map(r => {
+      const booth = this.boothById(r.boothId);
+      return {
+        ...r,
+        boothTitle: booth?.title ?? `부스 #${r.boothId}`,
+        room: booth?.room ?? '',
+        order: (this.waitlists[r.boothId] || []).findIndex(x => x.id === r.id) + 1
+      };
     });
   },
 
@@ -297,6 +403,45 @@ const SESIM = {
     this.scrollTo(sectionId);
   },
 
+  // ==================== 전체 화면 모드 (총괄 어드민 제어) ====================
+  // Firestore settings/site 문서의 heroMode 를 모든 접속자가 실시간 구독
+  listenSiteSettings() {
+    onSnapshot(doc(db, 'settings', 'site'), (snap) => {
+      this.applyHeroMode(snap.data()?.heroMode === 'festival' ? 'festival' : 'dday');
+    }, (err) => {
+      console.error('[SESIM] 화면 설정 동기화 실패:', err);
+    });
+  },
+
+  applyHeroMode(mode) {
+    this.heroMode = mode;
+    const isFest = mode === 'festival';
+    document.getElementById('hero-dday-view')?.classList.toggle('hidden', isFest);
+    document.getElementById('hero-festival-view')?.classList.toggle('hidden', !isFest);
+    document.getElementById('mode-btn-dday')?.classList.toggle('active', !isFest);
+    document.getElementById('mode-btn-festival')?.classList.toggle('active', isFest);
+  },
+
+  // 총괄 어드민만 호출 가능 (보안 규칙에서도 super 만 쓰기 허용)
+  async setHeroMode(mode) {
+    if (!this.isSuper() || mode === this.heroMode) return;
+    const label = mode === 'festival' ? '축제 당일 (팝업 배너)' : 'D-Day 카운트다운';
+    if (!confirm(`모든 학생의 메인 화면을 [${label}] 화면으로 바꾸시겠습니까?`)) return;
+    try {
+      await setDoc(doc(db, 'settings', 'site'), {
+        heroMode: mode,
+        updatedAt: serverTimestamp(),
+        updatedBy: this.currentUser.email
+      }, { merge: true });
+      this.showToast(`📢 전체 화면이 [${label}] 모드로 전환되었습니다.`);
+    } catch (err) {
+      console.error('[SESIM] 화면 모드 변경 실패:', err);
+      this.showToast(err.code === 'permission-denied'
+        ? '권한이 없습니다. (총괄 어드민 전용)'
+        : '변경 실패: ' + err.code);
+    }
+  },
+
   // 부스 리스트 렌더링
   currentFilter: 'all',
 
@@ -334,15 +479,15 @@ const SESIM = {
         <div class="booth-card" data-id="${booth.id}">
           <div class="booth-header">
             <div>
-              <div class="club-name">${booth.club}</div>
-              <h3 class="booth-title">${booth.title}</h3>
+              <div class="club-name">${esc(booth.club)}</div>
+              <h3 class="booth-title">${esc(booth.title)}</h3>
             </div>
             ${stateBadge}
           </div>
-          <p class="booth-desc">${booth.desc}</p>
+          <p class="booth-desc">${esc(booth.desc)}</p>
           <div class="booth-footer">
             <div class="booth-meta">
-              <span>📍 ${booth.room}</span>
+              <span>📍 ${esc(booth.room)}</span>
               <span>👥 대기 ${this.waitCount(booth.id)}팀</span>
             </div>
             <button class="btn-reserve"
@@ -416,7 +561,7 @@ const SESIM = {
       return;
     }
 
-    const booth = this.booths.find(b => b.id === boothId);
+    const booth = this.boothById(boothId);
     if (!booth || booth.status !== 'OPEN') {
       this.showToast('현재 예약이 불가능한 부스입니다.');
       return;
@@ -444,7 +589,8 @@ const SESIM = {
     this.openModal('reserve-modal');
   },
 
-  // 예약 신청 제출 처리 → Firestore reservations 에 저장
+  // 예약 신청 제출 처리
+  // reservations(공개: 순번 계산용) + contacts(비공개: 해당 부스 관리자만 열람) 를 한 번에 저장
   async handleReserveSubmit(e) {
     e.preventDefault();
     if (!this.currentUser) return this.showToast('먼저 로그인해주세요.');
@@ -452,7 +598,7 @@ const SESIM = {
     const boothId = parseInt(document.getElementById('reserve-form').dataset.boothId, 10);
     const phone = document.getElementById('reserve-phone').value.trim();
     const party = parseInt(document.getElementById('reserve-party').value, 10);
-    const booth = this.booths.find(b => b.id === boothId);
+    const booth = this.boothById(boothId);
     if (!booth) return;
 
     if (this.myReservations.length >= 2) {
@@ -463,25 +609,40 @@ const SESIM = {
     submitBtn.disabled = true;
 
     try {
-      // 연락처는 본인/관리자만 읽을 수 있는 users 문서에 저장
-      await setDoc(doc(db, 'users', this.currentUser.uid),
-        { phone, phoneConsentAt: serverTimestamp() }, { merge: true });
-      this.currentUser.phone = phone;
-
-      await addDoc(collection(db, 'reservations'), {
-        uid: this.currentUser.uid,
+      const u = this.currentUser;
+      const resRef = doc(collection(db, 'reservations'));
+      const batch = writeBatch(db);
+      batch.set(resRef, {
+        uid: u.uid,
         boothId: booth.id,
         party,
         status: 'WAIT',
         createdAt: serverTimestamp()   // 서버 시간 기준 순번 (조작 불가)
       });
+      batch.set(doc(db, 'contacts', resRef.id), {
+        uid: u.uid,
+        boothId: booth.id,
+        email: auth.currentUser.email,
+        studentId: u.studentId,
+        name: u.name,
+        phone,
+        createdAt: serverTimestamp()
+      });
+      await batch.commit();
+
+      // 다음 예약 때 자동 입력되도록 내 프로필에도 저장 (본인만 열람)
+      setDoc(doc(db, 'users', u.uid), { phone, phoneConsentAt: serverTimestamp() }, { merge: true })
+        .catch(err => console.error('[SESIM] 연락처 저장 실패:', err));
+      u.phone = phone;
 
       this.closeModal('reserve-modal');
       this.showToast(`🎉 ${booth.title} 예약 완료!`);
       document.getElementById('my-reservations-banner').scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       console.error('[SESIM] 예약 실패:', err);
-      this.showToast('예약 실패: ' + err.code);
+      this.showToast(err.code === 'permission-denied'
+        ? '예약할 수 없습니다. (부스가 운영 중인지 확인해주세요)'
+        : '예약 실패: ' + err.code);
     } finally {
       submitBtn.disabled = false;
     }
@@ -499,79 +660,107 @@ const SESIM = {
     }
   },
 
-  // ==================== 부스 관리자 모드 ====================
-  // ※ PIN 은 화면 진입용일 뿐, 실제 호출/완료 처리는 Firestore admins 컬렉션에 등록된 계정만 가능
+  // ==================== 관리자 페이지 (부스 관리자 / 총괄 어드민) ====================
   openAdminModal() {
     this.openModal('admin-modal');
+    this.renderAdminModal();
   },
 
-  authenticateAdmin() {
-    const boothId = parseInt(document.getElementById('admin-booth-select').value, 10);
-    const pin = document.getElementById('admin-pin-input').value;
-    const booth = this.booths.find(b => b.id === boothId);
+  // 권한에 따라 관리자 모달 화면 구성
+  renderAdminModal() {
+    const gate = document.getElementById('admin-gate-view');
+    const dash = document.getElementById('admin-dashboard-view');
+    const superPanel = document.getElementById('super-panel');
+    if (!gate || !dash || !superPanel) return;
 
-    if (booth && booth.pin === pin) {
-      this.currentAdminBoothId = boothId;
-      document.getElementById('admin-login-view').classList.add('hidden');
-      document.getElementById('admin-dashboard-view').classList.remove('hidden');
-      this.renderAdminDashboard();
-      this.showToast(`🔑 [${booth.title}] 관리자 로그인 성공!`);
+    const showGate = (title, desc, showLogin) => {
+      gate.classList.remove('hidden');
+      dash.classList.add('hidden');
+      superPanel.classList.add('hidden');
+      document.getElementById('admin-gate-title').textContent = title;
+      document.getElementById('admin-gate-desc').textContent = desc;
+      document.getElementById('admin-gate-login-btn').classList.toggle('hidden', !showLogin);
+      this.selectAdminBooth(null);
+    };
+
+    if (!this.currentUser) {
+      return showGate('관리자 로그인 필요', '총괄 어드민에게 지정받은 학교 Google 계정으로 로그인해주세요.', true);
+    }
+    if (!this.role) {
+      return showGate('관리 권한이 없는 계정입니다',
+        `부스 관리자 권한이 필요하면 총괄 어드민(학생회)에게 이 이메일을 알려주세요: ${this.currentUser.email}`, false);
+    }
+
+    gate.classList.add('hidden');
+    dash.classList.remove('hidden');
+    const isSuper = this.isSuper();
+    superPanel.classList.toggle('hidden', !isSuper);
+    document.getElementById('admin-booth-select-group').classList.toggle('hidden', !isSuper);
+    document.getElementById('admin-role-badge').textContent = isSuper ? '👑 총괄 어드민' : '🔑 부스 관리자';
+
+    let boothId;
+    if (isSuper) {
+      // 총괄: 전체 부스 중 선택
+      const select = document.getElementById('admin-booth-select');
+      const prev = this.currentAdminBoothId;
+      select.innerHTML = this.booths.map(b => `<option value="${b.id}">${b.id}. ${esc(b.title)}</option>`).join('');
+      boothId = this.boothById(prev) ? prev : this.booths[0]?.id ?? null;
+      if (boothId != null) select.value = String(boothId);
+      this.renderSuperPanel();
     } else {
-      alert('비밀번호(PIN)가 일치하지 않습니다!');
+      // 부스 관리자: 지정된 자기 부스만
+      boothId = this.role.boothId;
     }
+
+    this.selectAdminBooth(boothId);
   },
 
-  logoutAdmin() {
-    this.currentAdminBoothId = null;
-    document.getElementById('admin-login-view').classList.remove('hidden');
-    document.getElementById('admin-dashboard-view').classList.add('hidden');
-    document.getElementById('admin-pin-input').value = '';
-    this.showToast('관리자 로그아웃 되었습니다.');
-  },
+  // 관리할 부스 변경 → 해당 부스 연락처 실시간 구독
+  selectAdminBooth(boothId) {
+    if (boothId !== this.currentAdminBoothId) {
+      if (this._unsubContacts) this._unsubContacts();
+      this._unsubContacts = null;
+      this.adminContacts = {};
+      this.currentAdminBoothId = boothId;
 
-  // 관리자 화면용 학생 프로필 조회 (admins 등록 계정만 읽기 가능)
-  async loadProfile(uid) {
-    if (uid in this.profileCache) return;
-    this.profileCache[uid] = null;
-    try {
-      const snap = await getDoc(doc(db, 'users', uid));
-      this.profileCache[uid] = snap.data() || {};
-    } catch (e) {
-      this.profileCache[uid] = { denied: true };
+      if (boothId != null) {
+        const q = query(collection(db, 'contacts'), where('boothId', '==', boothId));
+        this._unsubContacts = onSnapshot(q, (snap) => {
+          this.adminContacts = {};
+          snap.docs.forEach(d => { this.adminContacts[d.id] = d.data(); });
+          this.renderAdminDashboard();
+        }, (err) => {
+          console.error('[SESIM] 연락처 조회 실패:', err);
+          this.showToast('예약자 연락처를 불러올 권한이 없습니다.');
+        });
+      }
     }
-    if (this.currentAdminBoothId) this.renderAdminDashboard();
+    this.renderAdminDashboard();
   },
 
   renderAdminDashboard() {
-    const booth = this.booths.find(b => b.id === this.currentAdminBoothId);
-    if (!booth) return;
-    const waitlist = this.waitlists[booth.id] || [];
+    if (this.currentAdminBoothId == null) return;
+    const booth = this.boothById(this.currentAdminBoothId);
+    const waitlist = this.waitlists[this.currentAdminBoothId] || [];
 
-    document.getElementById('admin-active-booth-name').textContent = booth.title;
+    document.getElementById('admin-active-booth-name').textContent = booth?.title ?? `부스 #${this.currentAdminBoothId} (미등록)`;
     document.getElementById('admin-wait-count').textContent = waitlist.length;
 
     // 상태 버튼 활성화 갱신
     document.querySelectorAll('.status-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.status === booth.status);
+      btn.classList.toggle('active', btn.dataset.status === booth?.status);
     });
 
     const listContainer = document.getElementById('admin-waitlist-items');
-    if (!this.currentUser) {
-      listContainer.innerHTML = '<p class="empty-res">대기 명단을 보려면 Google 로그인이 필요합니다.</p>';
-      return;
-    }
     if (waitlist.length === 0) {
       listContainer.innerHTML = '<p class="empty-res">현재 대기 중인 예약자가 없습니다.</p>';
       return;
     }
 
     listContainer.innerHTML = waitlist.map((wait, idx) => {
-      if (!(wait.uid in this.profileCache)) this.loadProfile(wait.uid);
-      const p = this.profileCache[wait.uid];
-      const who = !p ? '불러오는 중...'
-        : p.denied ? '(관리자 권한 필요)'
-        : `${p.studentId || ''} ${p.name || ''}`;
-      const phone = p?.phone || '';
+      const c = this.adminContacts[wait.id];
+      const who = c ? `${c.studentId || ''} ${c.name || ''}` : '불러오는 중...';
+      const phone = c?.phone || '';
       const time = wait.createdAt?.toDate?.().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) || '-';
       const isCalled = wait.status === 'CALLED';
       return `
@@ -587,6 +776,7 @@ const SESIM = {
               ${isCalled ? '호출중 (재호출)' : '🔔 입장 호출'}
             </button>
             <button class="btn-cancel-ticket" onclick="SESIM.completeStudentEntry('${esc(wait.id)}')">입장완료</button>
+            <button class="btn-cancel-ticket" onclick="SESIM.markNoShow('${esc(wait.id)}')">노쇼</button>
           </div>
         </div>
       `;
@@ -601,7 +791,7 @@ const SESIM = {
     } catch (err) {
       console.error('[SESIM] 상태 변경 실패:', err);
       this.showToast(err.code === 'permission-denied'
-        ? '권한이 없습니다. (Firestore admins 컬렉션에 등록된 계정만 가능)'
+        ? '권한이 없습니다. (담당 부스만 관리할 수 있습니다)'
         : '처리 실패: ' + err.code);
       return false;
     }
@@ -621,15 +811,137 @@ const SESIM = {
     }
   },
 
-  // 부스 상태 변경 (※ 부스 정보는 아직 Firestore 미연동 → 현재 화면에만 반영)
-  updateBoothStatus(newStatus) {
-    const booth = this.booths.find(b => b.id === this.currentAdminBoothId);
-    if (!booth) return;
+  // 호출했는데 오지 않은 학생 (대기열에서 빠짐)
+  async markNoShow(resId) {
+    if (!confirm('노쇼 처리하시겠습니까? 해당 예약은 대기열에서 제외됩니다.')) return;
+    if (await this.setReservationStatus(resId, 'NOSHOW')) {
+      this.showToast('노쇼 처리되었습니다.');
+    }
+  },
 
-    booth.status = newStatus;
-    this.renderAdminDashboard();
-    this.renderBooths();
-    this.showToast(`부스 상태가 [${newStatus}] 로 변경되었습니다.`);
+  // 부스 상태 변경 → booths 문서에 저장되어 모든 학생 화면에 실시간 반영
+  async updateBoothStatus(newStatus) {
+    const boothId = this.currentAdminBoothId;
+    if (boothId == null) return;
+    if (!this.boothsInDb) {
+      return this.showToast('부스 데이터가 아직 등록되지 않았습니다. 총괄 어드민이 먼저 등록해야 합니다.');
+    }
+    try {
+      await updateDoc(doc(db, 'booths', String(boothId)), {
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+        updatedBy: this.currentUser.email
+      });
+      this.showToast(`부스 상태가 [${BOOTH_STATUS_LABEL[newStatus]}] 로 변경되었습니다.`);
+    } catch (err) {
+      console.error('[SESIM] 부스 상태 변경 실패:', err);
+      this.showToast(err.code === 'permission-denied'
+        ? '권한이 없습니다. (담당 부스만 변경할 수 있습니다)'
+        : '변경 실패: ' + err.code);
+    }
+  },
+
+  // ==================== 총괄 어드민: 권한 관리 ====================
+  listenRoleList() {
+    if (this._unsubRoleList) return;
+    this._unsubRoleList = onSnapshot(collection(db, 'roles'), (snap) => {
+      this.roleList = snap.docs.map(d => ({ email: d.id, ...d.data() }))
+        .sort((a, b) => (a.role === b.role ? (a.boothId ?? 0) - (b.boothId ?? 0) : (a.role === 'super' ? -1 : 1)));
+      this.renderSuperPanel();
+    }, (err) => {
+      console.error('[SESIM] 권한 목록 조회 실패:', err);
+    });
+  },
+
+  renderSuperPanel() {
+    if (!this.isSuper()) return;
+
+    // 담당 부스 선택지
+    const boothSelect = document.getElementById('role-booth');
+    const prev = boothSelect.value;
+    boothSelect.innerHTML = this.booths.map(b => `<option value="${b.id}">${b.id}. ${esc(b.title)}</option>`).join('');
+    if (prev) boothSelect.value = prev;
+    document.getElementById('role-booth-group').classList.toggle('hidden', document.getElementById('role-type').value !== 'booth');
+
+    // 부스 데이터 미등록 안내
+    document.getElementById('booth-seed-box').classList.toggle('hidden', this.boothsInDb);
+
+    const myEmail = this.currentUser?.email.toLowerCase();
+    const list = document.getElementById('role-list');
+    if (this.roleList.length === 0) {
+      list.innerHTML = '<p class="empty-res">등록된 권한이 없습니다.</p>';
+      return;
+    }
+    list.innerHTML = this.roleList.map(r => {
+      const label = r.role === 'super'
+        ? '👑 총괄 어드민'
+        : `🔑 ${esc(this.boothById(r.boothId)?.title ?? `부스 #${r.boothId}`)}`;
+      const isMe = r.email === myEmail;
+      return `
+        <div class="admin-waitlist-card">
+          <div class="admin-waitlist-info">
+            <strong>${esc(r.email)}${isMe ? ' (나)' : ''}</strong>
+            <span>${label}</span>
+          </div>
+          <div class="admin-card-actions">
+            ${isMe ? '' : `<button class="btn-cancel-ticket" onclick="SESIM.removeRole('${esc(r.email)}')">권한 해제</button>`}
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  async addRole(e) {
+    e.preventDefault();
+    if (!this.isSuper()) return;
+
+    const email = document.getElementById('role-email').value.trim().toLowerCase();
+    const roleType = document.getElementById('role-type').value;
+    const boothId = parseInt(document.getElementById('role-booth').value, 10);
+
+    if (!/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(email)) {
+      return this.showToast('올바른 이메일 주소를 입력해주세요.');
+    }
+    if (email === this.currentUser.email.toLowerCase()) {
+      return this.showToast('본인 권한은 직접 변경할 수 없습니다.');
+    }
+    if (SCHOOL_EMAIL_DOMAIN && !email.endsWith('@' + SCHOOL_EMAIL_DOMAIN)) {
+      return this.showToast(`학교 계정(@${SCHOOL_EMAIL_DOMAIN})만 지정할 수 있습니다.`);
+    }
+    if (roleType === 'booth' && !this.boothsInDb) {
+      return this.showToast('먼저 기본 부스 데이터를 등록해주세요.');
+    }
+
+    const label = roleType === 'super' ? '총괄 어드민' : `[${this.boothById(boothId)?.title}] 부스 관리자`;
+    const existing = this.roleList.find(r => r.email === email);
+    const msg = existing
+      ? `${email} 의 기존 권한을 ${label}(으)로 변경하시겠습니까?`
+      : `${email} 에게 ${label} 권한을 부여하시겠습니까?`;
+    if (!confirm(msg)) return;
+
+    const data = { role: roleType, updatedAt: serverTimestamp(), updatedBy: this.currentUser.email };
+    if (roleType === 'booth') data.boothId = boothId;
+
+    try {
+      await setDoc(doc(db, 'roles', email), data);
+      document.getElementById('role-email').value = '';
+      this.showToast(`✅ ${email} → ${label}`);
+    } catch (err) {
+      console.error('[SESIM] 권한 부여 실패:', err);
+      this.showToast('권한 부여 실패: ' + err.code);
+    }
+  },
+
+  async removeRole(email) {
+    if (!this.isSuper()) return;
+    if (!confirm(`${email} 의 관리 권한을 해제하시겠습니까?`)) return;
+    try {
+      await deleteDoc(doc(db, 'roles', email));
+      this.showToast('권한이 해제되었습니다.');
+    } catch (err) {
+      console.error('[SESIM] 권한 해제 실패:', err);
+      this.showToast('권한 해제 실패: ' + err.code);
+    }
   },
 
   // ==================== 크롬 공룡 스타일 미니 러너 게임 ====================
@@ -891,32 +1203,17 @@ const SESIM = {
       });
     });
 
-    // 화면 시뮬레이터 (D-Day 모드 vs 축제 당일 모드 토글)
-    const btnDday = document.getElementById('mode-btn-dday');
-    const btnFest = document.getElementById('mode-btn-festival');
-    const heroDday = document.getElementById('hero-dday-view');
-    const heroFest = document.getElementById('hero-festival-view');
+    // 총괄 어드민: 관리할 부스 전환 / 권한 종류에 따라 담당 부스 선택칸 표시
+    document.getElementById('admin-booth-select')?.addEventListener('change', (e) => {
+      this.selectAdminBooth(parseInt(e.target.value, 10));
+    });
+    document.getElementById('role-type')?.addEventListener('change', (e) => {
+      document.getElementById('role-booth-group').classList.toggle('hidden', e.target.value !== 'booth');
+    });
 
-    const setMode = (mode) => {
-      if (mode === 'dday') {
-        if (btnDday) btnDday.classList.add('active');
-        if (btnFest) btnFest.classList.remove('active');
-        if (heroDday) heroDday.classList.remove('hidden');
-        if (heroFest) heroFest.classList.add('hidden');
-        this.showToast('[D-Day 사전 모드] 카운트다운 및 포스터 화면입니다.');
-      } else {
-        if (btnFest) btnFest.classList.add('active');
-        if (btnDday) btnDday.classList.remove('active');
-        if (heroFest) heroFest.classList.remove('hidden');
-        if (heroDday) heroDday.classList.add('hidden');
-        this.showToast('[축제 당일 모드] 가로 스크롤 팝업 안내 화면입니다.');
-      }
-    };
-
-    if (btnDday && btnFest) {
-      btnDday.addEventListener('click', () => setMode('dday'));
-      btnFest.addEventListener('click', () => setMode('festival'));
-    }
+    // 총괄 어드민 전용: 전체 학생 화면 모드 전환 버튼
+    document.getElementById('mode-btn-dday')?.addEventListener('click', () => this.setHeroMode('dday'));
+    document.getElementById('mode-btn-festival')?.addEventListener('click', () => this.setHeroMode('festival'));
 
     // 바로가기 메뉴 드로어 (사이드바) 제어
     const menuBtn = document.getElementById('menu-btn');
